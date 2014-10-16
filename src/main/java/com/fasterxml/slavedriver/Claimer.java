@@ -56,19 +56,20 @@ public class Claimer extends Thread
         LOG.info("Claimer started.");
         try {
             while (cluster.getState() != NodeState.Shutdown) {
-                claimQueue.take();
                 try {
+                    claimQueue.take();
                   cluster.claimWork();
                 } catch (InterruptedException e) {
                     // Don't swallow these
-                    throw e;
+                    LOG.warn("Claimer interrupted, exiting");
+                    break;
                 } catch (Exception e) {
                     LOG.error("Claimer failed to claim work", e);
                 }
             }
-        } catch (Throwable t) {
-            LOG.error("Claimer failed unexpectedly", t);
-            throw t;
+        } catch (RuntimeException e) {
+            LOG.error("Claimer failed unexpectedly", e);
+            throw e;
         } finally {
             LOG.info("Claimer shutting down.");
         }

@@ -39,9 +39,13 @@ public class ZKUtils
         ZooKeeperUtils.ensurePath(zk, acl, String.format("/%s/handoff-result", name));
     }
 
+    public static boolean createEphemeral(ZooKeeperClient zk, String path)
+            throws KeeperException, InterruptedException, ZooKeeperConnectionException {
+        return createEphemeral(zk, path, NO_BYTES);
+    }
+
     public static boolean createEphemeral(ZooKeeperClient zk, String path, String value)
-            throws KeeperException, InterruptedException, ZooKeeperConnectionException
-    {
+        throws KeeperException, InterruptedException, ZooKeeperConnectionException {
         return createEphemeral(zk, path, utf8BytesFrom(value));
     }
 
@@ -97,10 +101,14 @@ public class ZKUtils
         return false;
     }
 
-    public static boolean set(ZooKeeperClient zk, String path, String data)
+    public static boolean set(ZooKeeperClient zk, String path, String data) {
+        return set(zk, path, utf8BytesFrom(data));
+    }
+
+    public static boolean set(ZooKeeperClient zk, String path, byte[] data)
     {
         try {
-            zk.get().setData(path, utf8BytesFrom(data), -1);
+            zk.get().setData(path, (data == null) ? NO_BYTES : data, -1);
             return true;
         } catch (Exception e) {
             LOG.error("Error setting "+path, e);

@@ -1,11 +1,16 @@
 package com.fasterxml.slavedriver;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 public class NodeInfo {
     public final String state;
-    public final long connectionId;
+    public final long connectionID;
 
-    public NodeInfo(String state, long connectionId) {
+    @JsonCreator
+    public NodeInfo(@JsonProperty("state") String state,
+            @JsonProperty("connectionID") long connectionID) {
         this.state = state;
-        this.connectionId = connectionId;
+        this.connectionID = connectionID;
     }
 }
