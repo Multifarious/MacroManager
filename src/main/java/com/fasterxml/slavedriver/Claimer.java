@@ -51,29 +51,6 @@ public class Claimer extends Thread
         claimQueue = new TokenQueue(metrics);
     }
 
-    /*
-    try {
-      while (cluster.getState() != NodeState.Shutdown) {
-        claimQueue.take()
-        try {
-          cluster.claimWork()
-        } catch {
-          case e: InterruptedException =>
-            // Don't swallow these
-            throw e
-          case e: Exception =>
-            log.error("Claimer failed to claim work", e)
-        }
-      }
-    } catch {
-      case e: Throwable =>
-        log.error("Claimer failed unexpectedly", e)
-        throw e
-    } finally {
-      log.info("Claimer shutting down.")
-    }
-     */
-    
     @Override
     public void run() {
         LOG.info("Claimer started.");
