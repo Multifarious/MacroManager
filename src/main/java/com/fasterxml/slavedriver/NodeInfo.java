@@ -13,4 +13,9 @@ public class NodeInfo {
         this.state = state;
         this.connectionID = connectionID;
     }
+
+    @Override
+    public String toString() {
+        return "[NodeInfo: state="+state+", connectionID="+connectionID+"]";
+    }
 }

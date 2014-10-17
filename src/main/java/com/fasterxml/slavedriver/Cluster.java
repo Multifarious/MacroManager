@@ -23,6 +23,7 @@ import com.fasterxml.slavedriver.listeners.VerifyIntegrityListener;
 import com.fasterxml.slavedriver.util.JsonUtil;
 import com.fasterxml.slavedriver.util.NamedThreadFactory;
 import com.fasterxml.slavedriver.util.Strings;
+import com.fasterxml.slavedriver.util.ZKDeserializers;
 import com.fasterxml.slavedriver.util.ZKException;
 import com.fasterxml.slavedriver.util.ZKUtils;
 import com.twitter.common.quantity.Time;
@@ -31,6 +32,7 @@ import com.twitter.common.zookeeper.ZooKeeperClient;
 import com.twitter.common.zookeeper.ZooKeeperClient.ZooKeeperConnectionException;
 import com.twitter.common.zookeeper.ZooKeeperMap;
 
+import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.KeeperException.NoNodeException;
 import org.apache.zookeeper.Watcher;
@@ -517,41 +519,45 @@ public class Cluster
      * watchers for calls to "/meta/rebalance", and if smart balancing is enabled, we'll
      * watch "<service-name>/meta/workload" for changes to the cluster's workload.
      */
-    private void registerWatchers()
+    private void registerWatchers() throws InterruptedException
     {
         ClusterNodesChangedListener nodesChangedListener = new ClusterNodesChangedListener(this);
         VerifyIntegrityListener<String> verifyIntegrityListener =
                 new VerifyIntegrityListener<String>(this);
-        StringDeserializer stringDeser = new StringDeserializer();
+        ZKDeserializers.StringDeserializer stringDeser = new ZKDeserializers.StringDeserializer();
 
-        nodes = ZooKeeperMap.create(zk, String.format("/%s/nodes", name),
-                new NodeInfoDeserializer(), nodesChangedListener);
-
-        allWorkUnits = ZooKeeperMap.create(zk, String.format("/%s", config.workUnitName),
-                new ObjectNodeDeserializer, new VerifyIntegrityListener<ObjectNode>(this));
-
-        workUnitMap = ZooKeeperMap.create(zk, String.format("/%s/claimed-%s", name, config.workUnitShortName),
-                stringDeser, verifyIntegrityListener);
-
-        // Watch handoff requests and results.
-        if (config.useSoftHandoff) {
-            handoffRequests = ZooKeeperMap.create(zk, String.format("/%s/handoff-requests", name),
+        try {
+            nodes = ZooKeeperMap.create(zk, String.format("/%s/nodes", name),
+                    new ZKDeserializers.NodeInfoDeserializer(), nodesChangedListener);
+            allWorkUnits = ZooKeeperMap.create(zk, String.format("/%s", config.workUnitName),
+                    new ZKDeserializers.ObjectNodeDeserializer(), new VerifyIntegrityListener<ObjectNode>(this));
+    
+            workUnitMap = ZooKeeperMap.create(zk, String.format("/%s/claimed-%s", name, config.workUnitShortName),
                     stringDeser, verifyIntegrityListener);
-
-            handoffResults = ZooKeeperMap.create(zk, String.format("/%s/handoff-result", name),
-                    stringDeser, handoffResultsListener);
-        } else {
-            handoffRequests = new HashMap<String, String>();
-            handoffResults = new HashMap<String, String>();
-        }
-
-        // If smart balancing is enabled, watch for changes to the cluster's workload.
-        if (config.useSmartBalancing) {
-            loadMap = ZooKeeperMap.<Double>create(zk, String.format("/%s/meta/workload", name),
-                    new DoubleDeserializer());
+    
+            // Watch handoff requests and results.
+            if (config.useSoftHandoff) {
+                handoffRequests = ZooKeeperMap.create(zk, String.format("/%s/handoff-requests", name),
+                        stringDeser, verifyIntegrityListener);
+    
+                handoffResults = ZooKeeperMap.create(zk, String.format("/%s/handoff-result", name),
+                        stringDeser, handoffResultsListener);
+            } else {
+                handoffRequests = new HashMap<String, String>();
+                handoffResults = new HashMap<String, String>();
+            }
+    
+            // If smart balancing is enabled, watch for changes to the cluster's workload.
+            if (config.useSmartBalancing) {
+                loadMap = ZooKeeperMap.<Double>create(zk, String.format("/%s/meta/workload", name),
+                        new ZKDeserializers.DoubleDeserializer());
+            }
+        } catch (KeeperException e) {
+            throw ZKException.from(e);
+        } catch (ZooKeeperConnectionException e) {
+            throw ZKException.from(e);
         }
     }
-
 
     /**
      * Triggers a work-claiming cycle. If smart balancing is enabled, claim work based

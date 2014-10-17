@@ -3,6 +3,7 @@ package com.fasterxml.slavedriver.util;
 import java.io.IOException;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 public class JsonUtil
 {
@@ -22,5 +23,13 @@ public class JsonUtil
 
     public static <T> T fromJSON(byte[] json, Class<T> cls) throws IOException {
         return MAPPER.readValue(json, cls);
+    }
+
+    public static ObjectNode fromJSON(byte[] json) throws IOException {
+        return (ObjectNode) MAPPER.readTree(json);
+    }
+    
+    public static ObjectNode objectNode() {
+        return MAPPER.createObjectNode();
     }
 }

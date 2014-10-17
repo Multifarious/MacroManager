@@ -1,5 +1,6 @@
 package com.fasterxml.slavedriver.util;
 
+import java.nio.charset.Charset;
 import java.util.Collection;
 import java.util.Map;
 
@@ -8,6 +9,20 @@ import java.util.Map;
  */
 public class Strings
 {
+    private final static byte[] NO_BYTES = new byte[0];
+    private final static Charset UTF8 = Charset.forName("UTF-8");
+    
+    public static byte[] utf8BytesFrom(String value) {
+        return (value == null) ? NO_BYTES : value.getBytes(UTF8);
+    }
+
+    public static String stringFromUtf8(byte[] data) {
+        if (data == null || data.length == 0) {
+            return "";
+        }
+        return new String(data, UTF8);
+    }
+
     public static String mkstring(Collection<?> c, String sep)
     {
         StringBuilder sb = new StringBuilder(50);

@@ -1,6 +1,5 @@
 package com.fasterxml.slavedriver.util;
 
-import java.nio.charset.Charset;
 import java.util.ArrayList;
 
 import com.twitter.common.zookeeper.ZooKeeperClient.ZooKeeperConnectionException;
@@ -23,7 +22,6 @@ public class ZKUtils
 {
     private final static Logger LOG = LoggerFactory.getLogger(ZKUtils.class);
 
-    private final static Charset UTF8 = Charset.forName("UTF-8");
     private final static byte[] NO_BYTES = new byte[0];
     
     public static void ensureOrdasityPaths(ZooKeeperClient zk, String name, String unit, String unitShort)
@@ -52,7 +50,7 @@ public class ZKUtils
 
     public static boolean createEphemeral(ZooKeeperClient zk, String path, String value)
         throws InterruptedException {
-        return createEphemeral(zk, path, utf8BytesFrom(value));
+        return createEphemeral(zk, path, Strings.utf8BytesFrom(value));
     }
 
     public static boolean createEphemeral(ZooKeeperClient zk, String path, byte[] value)
@@ -113,7 +111,7 @@ public class ZKUtils
     }
 
     public static boolean set(ZooKeeperClient zk, String path, String data) {
-        return set(zk, path, utf8BytesFrom(data));
+        return set(zk, path, Strings.utf8BytesFrom(data));
     }
 
     public static boolean set(ZooKeeperClient zk, String path, byte[] data)
@@ -131,7 +129,7 @@ public class ZKUtils
             String data, CreateMode mode)
                     throws InterruptedException
     {
-        setOrCreate(zk, path, utf8BytesFrom(data), mode);
+        setOrCreate(zk, path, Strings.utf8BytesFrom(data), mode);
     }
 
     public static void setOrCreate(ZooKeeperClient zk, String path,
@@ -170,7 +168,7 @@ public class ZKUtils
         try {
             ZooKeeper zk = zkc.get();
             byte[] value = zk.getData(path, false, stat);
-            return new String(value, UTF8);
+            return Strings.stringFromUtf8(value);
         } catch (NoNodeException e) {
             ; // not considered problematic?
         } catch (Exception e) {
@@ -189,9 +187,5 @@ public class ZKUtils
             LOG.error("Failed to get stat for ZNode at path {}", path);
         }
         return null;
-    }
-
-    public static byte[] utf8BytesFrom(String value) {
-        return (value == null) ? NO_BYTES : value.getBytes(UTF8);
     }
 }

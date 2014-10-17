@@ -36,7 +36,7 @@ public class MeteredBalancingPolicy
         }
         this.metrics = metrics;
 
-        // 17-Oct-2014, tatu: Not 100% this was correct transtalation of the intent; would seem
+        // 17-Oct-2014, tatu: Not 100% this was correct translation of the intent; would seem
         //   like name could use some sort of prefix but...
         final Gauge<Double> loadGauge = new Gauge<Double>() {
             @Override
