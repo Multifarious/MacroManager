@@ -14,7 +14,11 @@ import com.codahale.metrics.Meter;
 import com.codahale.metrics.MetricRegistry;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.slavedriver.balancing.BalancingPolicy;
+import com.fasterxml.slavedriver.balancing.CountBalancingPolicy;
+import com.fasterxml.slavedriver.balancing.MeteredBalancingPolicy;
+import com.fasterxml.slavedriver.listeners.ClusterNodesChangedListener;
 import com.fasterxml.slavedriver.listeners.HandoffResultsListener;
+import com.fasterxml.slavedriver.listeners.VerifyIntegrityListener;
 import com.fasterxml.slavedriver.util.JsonUtil;
 import com.fasterxml.slavedriver.util.NamedThreadFactory;
 import com.fasterxml.slavedriver.util.Strings;
@@ -59,21 +63,21 @@ public class Cluster
     public final Set<String> myWorkUnits = new NonBlockingHashSet<String>();
     public Map<String,ObjectNode> allWorkUnits;
     public Map<String,String> workUnitMap;
-    public Map<String,String>  handoffRequests;
-    public Map<String,String>  handoffResults;
+    public Map<String,String> handoffRequests;
+    public Map<String,String> handoffResults;
     public Set<String> claimedForHandoff = new NonBlockingHashSet<String>();
     public Map<String,Double> loadMap = Collections.emptyMap();
     public Set<String> workUnitsPeggedToMe = new NonBlockingHashSet<String>();
     final private Claimer claimer;
 
-    final private AtomicReference<NodeState> state = new AtomicReference<NodeState>(NodeState.Fresh);
+    public final AtomicReference<NodeState> state = new AtomicReference<NodeState>(NodeState.Fresh);
     
-    final private HandoffResultsListener handoffResultsListener;
+    public final HandoffResultsListener handoffResultsListener;
 
     final private BalancingPolicy balancingPolicy;
 
     // Scheduled executions
-    public final AtomicReference<ScheduledThreadPoolExecutor> pool;
+    private final AtomicReference<ScheduledThreadPoolExecutor> pool;
     private ScheduledFuture<?> autoRebalanceFuture; // Option[ScheduledFuture[_]] = None
 
     // Metrics
@@ -101,10 +105,10 @@ public class Cluster
         shortName = config.workUnitShortName;
 
         claimer = new Claimer(metrics, this, "ordasity-claimer-" + name);
-        handoffResultsListener = new HandoffResultsListener(this, config);
+        handoffResultsListener = new HandoffResultsListener(this);
         balancingPolicy = config.useSmartBalancing
-                ? new MeteredBalancingPolicy(this, config).init()
-                : new CountBalancingPolicy(this, config).init()
+                ? new MeteredBalancingPolicy(this).init()
+                : new CountBalancingPolicy(this).init()
                 ;
         pool = new AtomicReference<ScheduledThreadPoolExecutor>(createScheduledThreadExecutor());
         
@@ -142,7 +146,7 @@ public class Cluster
     private ScheduledThreadPoolExecutor createScheduledThreadExecutor() {
         return new ScheduledThreadPoolExecutor(1, new NamedThreadFactory("ordasity-scheduler"));
     }
-
+    
     // // // Trivial accessors
 
     public boolean isInitialized() {
@@ -155,11 +159,22 @@ public class Cluster
         return state.get();
     }
 
+    // // // Access to helper objects
+    
+    public void schedule(Runnable r, long delay, TimeUnit unit) {
+        pool.get().schedule(r, delay, unit);
+    }
+
+    public void scheduleAtFixedRate(Runnable r, long initial, long period, TimeUnit unit) {
+        pool.get().scheduleAtFixedRate(r, initial, period, unit);
+    }
+    
     // // // Active API
     
     /**
      * Joins the cluster, claims work, and begins operation.
      */
+    @Override
     public String join() {
         return join(null);
     }
@@ -419,7 +434,7 @@ public class Cluster
      */
     private void joinCluster() {
       while (true) {
-          NodeInfo myInfo = new NodeInfo(NodeState.Fresh.toString(), zk.get().getSessionId)
+          NodeInfo myInfo = new NodeInfo(NodeState.Fresh.toString(), zk.get().getSessionId());
           byte[] encoded = JsonUtil.asJSONBytes(myInfo);
           if (ZKUtils.createEphemeral(zk, "/" + name + "/nodes/" + myNodeID, encoded)) {
               return;
@@ -440,7 +455,8 @@ public class Cluster
     private void registerWatchers()
     {
         ClusterNodesChangedListener nodesChangedListener = new ClusterNodesChangedListener(this);
-        VerifyIntegrityListener verifyIntegrityListener = new VerifyIntegrityListener[String](this, config);
+        VerifyIntegrityListenerr<String> verifyIntegrityListener =
+                new VerifyIntegrityListener<String>(this, config);
         StringDeserializer stringDeser = new StringDeserializer();
 
         nodes = ZooKeeperMap.create(zk, String.format("/%s/nodes", name),
@@ -454,10 +470,10 @@ public class Cluster
 
         // Watch handoff requests and results.
         if (config.useSoftHandoff) {
-            handoffRequests = ZooKeeperMap.create(zk, "/%s/handoff-requests".format(name),
+            handoffRequests = ZooKeeperMap.create(zk, String.format("/%s/handoff-requests", name),
                     stringDeser, verifyIntegrityListener);
 
-            handoffResults = ZooKeeperMap.create(zk, "/%s/handoff-result".format(name),
+            handoffResults = ZooKeeperMap.create(zk, String.format("/%s/handoff-result", name),
                     stringDeser, handoffResultsListener);
         } else {
             handoffRequests = new HashMap<String, String>();
@@ -466,7 +482,8 @@ public class Cluster
 
         // If smart balancing is enabled, watch for changes to the cluster's workload.
         if (config.useSmartBalancing) {
-            loadMap = ZooKeeperMap.<Double>create(zk, "/%s/meta/workload".format(name), new DoubleDeserializer());
+            loadMap = ZooKeeperMap.<Double>create(zk, String.format("/%s/meta/workload", name),
+                    new DoubleDeserializer());
         }
     }
 
@@ -536,20 +553,20 @@ public class Cluster
      */
     public void startWork(String workUnit, Meter meter) {
         LOG.info("Successfully claimed {}: {}. Starting...", config.workUnitName, workUnit);
-        val added = myWorkUnits.add(workUnit);
+        final boolean added = myWorkUnits.add(workUnit);
 
         if (added) {
-            if (balancingPolicy.isInstanceOf[MeteredBalancingPolicy]) {
-                val mbp = balancingPolicy.asInstanceOf[MeteredBalancingPolicy];
+            if (balancingPolicy instanceof MeteredBalancingPolicy) {
+                MeteredBalancingPolicy mbp = (MeteredBalancingPolicy) balancingPolicy;
                 val meter = mbp.persistentMeterCache.getOrElseUpdate(
                         workUnit, metrics.meter(workUnit, "processing"));
-                mbp.meters.put(workUnit, meter)
-                listener.asInstanceOf[SmartListener].startWork(workUnit, meter)
+                mbp.meters.put(workUnit, meter);
+                ((SmartListener) listener).startWork(workUnit, meter);
             } else {
-                listener.asInstanceOf[ClusterListener].startWork(workUnit)
+                ((ClusterListener) listener).startWork(workUnit);
             }
         } else {
-            LOG.warn("Detected that %s is already a member of my work units; not starting twice!".format(workUnit))
+            LOG.warn("Detected that %s is already a member of my work units; not starting twice!", workUnit);
         }
     }
 
@@ -558,7 +575,7 @@ public class Cluster
      */
     private boolean shutdownWork(String workUnit, boolean doLog /*true*/ ) {
       if (doLog) {
-          LOG.info("Shutting down %s: %s...".format(config.workUnitName, workUnit))
+          LOG.info("Shutting down {}: {}...", config.workUnitName, workUnit);
       }
       myWorkUnits.remove(workUnit);
       claimedForHandoff.remove(workUnit);

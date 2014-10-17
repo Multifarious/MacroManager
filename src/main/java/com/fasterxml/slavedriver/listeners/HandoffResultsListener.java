@@ -2,12 +2,14 @@ package com.fasterxml.slavedriver.listeners;
 
 import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.Watcher;
+import org.apache.zookeeper.data.Stat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.fasterxml.slavedriver.Cluster;
 import com.fasterxml.slavedriver.ClusterConfig;
 import com.fasterxml.slavedriver.NodeInfo;
+import com.fasterxml.slavedriver.NodeState;
 import com.fasterxml.slavedriver.ZKUtils;
 import com.twitter.common.zookeeper.ZooKeeperMap;
 
@@ -45,12 +47,12 @@ public class HandoffResultsListener
         }
         if (iRequestedHandoff(workUnit)) {
             LOG.info("Handoff of %s to %s completed. Shutting down %s in %s seconds.".format(workUnit,
-                    cluster.getOrElse(cluster.handoffResults, workUnit, "(None)"), workUnit, clusterConfig.handoffShutdownDelay))
-                    ZKUtils.delete(cluster.zk, "/%s/handoff-requests/%s".format(cluster.name, workUnit))
-                cluster.pool.get.schedule(shutdownAfterHandoff(workUnit), clusterConfig.handoffShutdownDelay, TimeUnit.SECONDS)
+                    cluster.getOrElse(cluster.handoffResults, workUnit, "(None)"), workUnit, clusterConfig.handoffShutdownDelay));
+            ZKUtils.delete(cluster.zk, String.format("/%s/handoff-requests/%s", cluster.name, workUnit));
+            cluster.schedule(shutdownAfterHandoff(workUnit), clusterConfig.handoffShutdownDelay, TimeUnit.SECONDS)
         }
     }
-
+    
     /**
      * Determines if this Ordasity node requested handoff of a work unit to someone else.
      * I have requested handoff of a work unit if it's currently a member of my active set
@@ -89,39 +91,40 @@ public class HandoffResultsListener
      * Attempts to establish a final claim to the node handed off to me in ZooKeeper, and
      * repeats execution of the task every two seconds until it is complete.
      */
-    public void finishHandoff(final String workUnit)
+    public void finishHandoff(final String workUnit) throws InterruptedException
     {
-        String str = cluster.workUnitMap.get(workUnit);
-        LOG.info("Handoff of {} to me acknowledged. Deleting claim ZNode for {} and waiting for {} to shutdown work."
-                workUnit, workUnit, cluster.getOrElse(cluster.workUnitMap, workUnit, "(None)")));
+        String unitId = cluster.workUnitMap.get(workUnit);
+        LOG.info("Handoff of {} to me acknowledged. Deleting claim ZNode for {} and waiting for {} to shutdown work.",
+                workUnit, workUnit,
+                ((unitId == null) ? "(None)" : unitId));
 
         final String path = cluster.workUnitClaimPath(workUnit);
 
-        String stat = ZKUtils.exists(cluster.zk, path, new Watcher() {
+        Stat stat = ZKUtils.exists(cluster.zk, path, new Watcher() {
             @Override
             public void process(WatchedEvent event) {
                 // Don't really care about the type of event here - call unconditionally to clean up state
-                  completeHandoff(workUnit);
+                completeHandoff(workUnit, path);
             }
         });
         // Unlikely that peer will have already deleted znode, but handle it regardless
-        if (stat.isEmpty()) {
+        if (stat == null) {
             LOG.warn("Peer already deleted znode of {}", workUnit);
-            completeHandoff(workUnit);
+            completeHandoff(workUnit, path);
         }
     }
 
-    private void completeHandoff(String workUnit)
+    protected void completeHandoff(String workUnit, String path)
     {
         try {
-            LOG.info("Completing handoff of %s".format(workUnit))
+            LOG.info("Completing handoff of {}", workUnit);
             if (ZKUtils.createEphemeral(cluster.zk, path, cluster.myNodeID) || cluster.znodeIsMe(path)) {
-                LOG.info("Handoff of %s to me complete. Peer has shut down work.".format(workUnit));
+                LOG.info("Handoff of {} to me complete. Peer has shut down work.", workUnit);
             } else {
-                LOG.warn("Failed to completed handoff of %s - couldn't create ephemeral node".format(workUnit));
+                LOG.warn("Failed to completed handoff of {} - couldn't create ephemeral node", workUnit);
             }
         } catch (Exception e) {
-            LOG.error("Error completing handoff of %s to me."format(workUnit), e)
+            LOG.error("Error completing handoff of "+workUnit+" to me.", e);
         } finally {
             ZKUtils.delete(cluster.zk, "/" + cluster.name + "/handoff-result/" + workUnit);
             cluster.claimedForHandoff.remove(workUnit);

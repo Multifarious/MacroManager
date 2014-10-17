@@ -45,7 +45,7 @@ public class CountBalancingPolicy
             for (String workUnit : unclaimed) {
                  if ((isFairGame(workUnit) && claimed < maxToClaim) || isPeggedToMe(workUnit)) {
                    if (config.useSoftHandoff && cluster.handoffRequests.contains(workUnit) && attemptToClaim(workUnit, true)) {
-                       LOG.info("Accepted handoff of %s.".format(workUnit));
+                       LOG.info("Accepted handoff of {}.", workUnit);
                        cluster.handoffResultsListener.finishHandoff(workUnit);
                        claimed += 1;
                    } else if (!cluster.handoffRequests.contains(workUnit) && attemptToClaim(workUnit)) {

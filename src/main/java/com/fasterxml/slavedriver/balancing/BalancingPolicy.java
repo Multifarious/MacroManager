@@ -6,6 +6,7 @@ import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
+import org.apache.zookeeper.KeeperException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -14,6 +15,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.slavedriver.Cluster;
 import com.fasterxml.slavedriver.ClusterConfig;
 import com.fasterxml.slavedriver.ZKUtils;
+import com.twitter.common.zookeeper.ZooKeeperClient.ZooKeeperConnectionException;
 
 public abstract class BalancingPolicy
 {
@@ -110,15 +112,19 @@ public abstract class BalancingPolicy
      }
    }
 
-   boolean attemptToClaim(String workUnit) throws InterruptedException {
+   boolean attemptToClaim(String workUnit)
+           throws InterruptedException, KeeperException, ZooKeeperConnectionException {
        return attemptToClaim(workUnit, false);
    }
    
    /**
     * Attempts to claim a given work unit by creating an ephemeral node in ZooKeeper
     * with this node's ID. If the claim succeeds, start work. If not, move on.
+ * @throws ZooKeeperConnectionException 
+ * @throws KeeperException 
     */
-   boolean attemptToClaim(String workUnit, boolean claimForHandoff) throws InterruptedException
+   boolean attemptToClaim(String workUnit, boolean claimForHandoff)
+       throws InterruptedException, KeeperException, ZooKeeperConnectionException
    {
        LOG.debug("Attempting to claim {}. For handoff? {}", workUnit, claimForHandoff);
 
@@ -146,7 +152,8 @@ public abstract class BalancingPolicy
     * Claims a work unit pegged to this node, waiting for the ZNode to become available
     * (i.e., deleted by the node which previously owned it).
     */
-   protected void claimWorkPeggedToMe(String workUnit) throws InterruptedException {
+   protected void claimWorkPeggedToMe(String workUnit)
+       throws InterruptedException, KeeperException, ZooKeeperConnectionException {
        String path = cluster.workUnitClaimPath(workUnit);
 
        while (true) {
@@ -215,7 +222,7 @@ public abstract class BalancingPolicy
                cluster.shutdownWork(workUnit);
            }
          }
-         cluster.pool.get().schedule(this, drainInterval, TimeUnit.MILLISECONDS);
+         cluster.schedule(this, drainInterval, TimeUnit.MILLISECONDS);
            }
        };
 
@@ -223,7 +230,7 @@ public abstract class BalancingPolicy
                amountToDrain, cluster.myWorkUnits.size(), config.drainTime, toHandOff.mkString(", "));
 
        if (!cluster.myWorkUnits.isEmpty()) {
-           cluster.pool.get().schedule(handoffTask, 0, TimeUnit.SECONDS);
+           cluster.schedule(handoffTask, 0, TimeUnit.SECONDS);
        }
    }
 }

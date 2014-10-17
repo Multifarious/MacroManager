@@ -1,5 +1,6 @@
 package com.fasterxml.slavedriver.balancing;
 
+import java.util.LinkedList;
 import java.util.List;
 import java.util.TimerTask;
 import java.util.concurrent.TimeUnit;
@@ -35,32 +36,35 @@ public class MeteredBalancingPolicy
      * Then, continues to claim work from the available pool until we've claimed
      * equal to or slightly more than the total desired load.
      */
+    @Override
     public void claimWork()
     {
         synchronized (cluster.allWorkUnits) {
-            for (String workUnit : getUnclaimed())
+            for (String workUnit : getUnclaimed()) {
                 if (isPeggedToMe(workUnit)) {
                     claimWorkPeggedToMe(workUnit);
                 }
+            }
+            final double evenD= evenDistribution();
 
             LinkedList<String> unclaimed = new LinkedList<String>(getUnclaimed());
-                while (myLoad() <= evenDistribution && !unclaimed.isEmpty) {
-                    val workUnit = unclaimed.poll();
-                    if (config.useSoftHandoff && cluster.handoffRequests.contains(workUnit)
-                            && isFairGame(workUnit) && attemptToClaim(workUnit, claimForHandoff = true)) {
-                        LOG.info("Accepted handoff for %s.".format(workUnit))
-                        cluster.handoffResultsListener.finishHandoff(workUnit)
-                    } else if (isFairGame(workUnit)) {
-                        attemptToClaim(workUnit);
-                    }
+            while (myLoad() <= evenD && !unclaimed.isEmpty()) {
+                final String workUnit = unclaimed.poll();
+                if (config.useSoftHandoff && cluster.handoffRequests.contains(workUnit)
+                        && isFairGame(workUnit) && attemptToClaim(workUnit, claimForHandoff = true)) {
+                    LOG.info(String.format(workUnit));
+                    cluster.handoffResultsListener.finishHandoff(workUnit)
+                } else if (isFairGame(workUnit)) {
+                    attemptToClaim(workUnit);
                 }
-              }
             }
+        }
+    }
 
-            /**
-             * Performs a "smart rebalance." The target load is set to (cluster load / node count),
-             * where "load" is determined by the sum of all work unit meters in the cluster.
-             */
+    /**
+     * Performs a "smart rebalance." The target load is set to (cluster load / node count),
+     * where "load" is determined by the sum of all work unit meters in the cluster.
+     */
     @Override
     public void rebalance() {
         double target = evenDistribution();
@@ -76,7 +80,7 @@ public class MeteredBalancingPolicy
      * the cluster. This is determined by the total load divided by the number of alive nodes.
      */
     public double evenDistribution() {
-        return (double) cluster.loadMap.values.sum / (double) activeNodeSize();
+        return (double) cluster.loadMap.values().sum / (double) activeNodeSize();
     }
 
     /**
@@ -119,7 +123,7 @@ public class MeteredBalancingPolicy
                 }
               }
 
-              loadFuture = Some(cluster.pool.get.scheduleAtFixedRate(
+              loadFuture = Some(cluster.scheduleAtFixedRate(
                 sendLoadToZookeeper, 0, 1, TimeUnit.MINUTES))
             }
 
@@ -152,7 +156,7 @@ public class MeteredBalancingPolicy
         if (!drainList.isEmpty) {
             LOG.info("Releasing work units over {} seconds. Current load: {}. Target: {}. Releasing: {}",
                     time, startingLoad, targetLoad, drainList.mkString(", "));
-            cluster.pool.get.schedule(drainTask, 0, TimeUnit.SECONDS)
+            cluster.schedule(drainTask, 0, TimeUnit.SECONDS)
         }
     }
 
@@ -171,7 +175,7 @@ public class MeteredBalancingPolicy
                   } else {
                     cluster.shutdownWork(drainList.poll());
                   }
-                  cluster.pool.get().schedule(this, drainInterval, TimeUnit.MILLISECONDS)
+                  cluster.schedule(this, drainInterval, TimeUnit.MILLISECONDS)
             }
         }
     }
