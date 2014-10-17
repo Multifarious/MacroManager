@@ -33,8 +33,6 @@ public abstract class BalancingPolicy
     public abstract void claimWork() throws InterruptedException;
     public abstract void rebalance() throws InterruptedException;
 
-    // Implementation optional
-    public BalancingPolicy init() { return this; }
     public void shutdown() { }
     public void onConnect() { }
     public void onShutdownWork(String workUnit) { }
@@ -71,7 +69,7 @@ public abstract class BalancingPolicy
      * If the ZNode for this work unit is empty, or contains JSON mapping this node to that
      * work unit, it's considered "claimable."
     */
-   boolean isFairGame(String workUnit)
+   public boolean isFairGame(String workUnit)
    {
        ObjectNode workUnitData = cluster.allWorkUnits.get(workUnit);
        if (workUnitData == null || workUnitData.size() == 0) {
@@ -94,7 +92,7 @@ public abstract class BalancingPolicy
    /**
     * Determines whether or not a given work unit is pegged to this instance.
     */
-   boolean isPeggedToMe(String workUnitId)
+   public boolean isPeggedToMe(String workUnitId)
    {
        ObjectNode zkWorkData = cluster.allWorkUnits.get(workUnitId);
        if (zkWorkData == null || zkWorkData.size() == 0) {
@@ -144,7 +142,7 @@ public abstract class BalancingPolicy
            if (claimForHandoff) {
                cluster.claimedForHandoff.add(workUnit);
            }
-           cluster.startWork(workUnit, null);
+           cluster.startWork(workUnit);
            return true;
        }
        if (isPeggedToMe(workUnit)) {
@@ -164,7 +162,7 @@ public abstract class BalancingPolicy
 
        while (true) {
            if (ZKUtils.createEphemeral(cluster.zk, path, cluster.myNodeID) || cluster.znodeIsMe(path)) {
-               cluster.startWork(workUnit, null);
+               cluster.startWork(workUnit);
                return;
            }
            LOG.warn("Attempting to establish ownership of {}. Retrying in one second...", workUnit);

@@ -108,8 +108,8 @@ public class Cluster
         claimer = new Claimer(metrics, this, "ordasity-claimer-" + name);
         handoffResultsListener = new HandoffResultsListener(this);
         balancingPolicy = config.useSmartBalancing
-                ? new MeteredBalancingPolicy(this).init()
-                : new CountBalancingPolicy(this).init()
+                ? new MeteredBalancingPolicy(this, l)
+                : new CountBalancingPolicy(this)
                 ;
         pool = new AtomicReference<ScheduledThreadPoolExecutor>(createScheduledThreadExecutor());
         
@@ -320,18 +320,22 @@ public class Cluster
      */
     private void connect(ZooKeeperClient injectedClient) {
         if (!initialized.get()) {
-            val hosts = config.hosts.split(",").map { server =>
-              val host = server.split(":")(0)
-              val port = Integer.parseInt(server.split(":")(1))
-              new InetSocketAddress(host, port)
-            }.toList();
-    
-            claimer.start();
-            LOG.info("Connecting to hosts: {}", hosts.toString());
             if (injectedClient == null) {
-                injectedClient = new ZooKeeperClient(Amount.of(config.zkTimeout, Time.MILLISECONDS), hosts);
+                List<InetSocketAddress> hosts = new ArrayList<InetSocketAddress>();
+                for (String host : config.hosts.split(",")) {
+                    String[] parts = host.split(":");
+                    try {
+                        hosts.add(new InetSocketAddress(parts[0], Integer.parseInt(parts[1])));
+                    } catch (Exception e) {
+                        LOG.error("Invalid ZK host '"+host+"', need to skip, problem: "+e.getMessage());
+                    }
+                }
+                LOG.info("Connecting to hosts: {}", hosts.toString());
+                injectedClient = new ZooKeeperClient(Amount.of((int) config.zkTimeout, Time.MILLISECONDS),
+                        hosts);
             }
             zk = injectedClient;
+            claimer.start();
             LOG.info("Registering connection watcher.");
             zk.register(connectionWatcher);
         }
@@ -552,7 +556,8 @@ public class Cluster
      */
     public void verifyIntegrity()
     {
-        val noLongerActive = myWorkUnits -- allWorkUnits.keys.toSet;
+        LinkedHashSet<String> noLongerActive = new LinkedHashSet<String>(myWorkUnits);
+        noLongerActive.removeAll(allWorkUnits.keySet());
         
         for (String workUnit : noLongerActive) {
             shutdownWork(workUnit, true);
@@ -560,21 +565,20 @@ public class Cluster
 
         // Check the status of pegged work units to ensure that this node is not serving
         // a work unit that is pegged to another node in the cluster.
-        myWorkUnits.map { workUnit =>
-        val claimPath = workUnitClaimPath(workUnit);
-        if (!balancingPolicy.isFairGame(workUnit) && !balancingPolicy.isPeggedToMe(workUnit)) {
-          LOG.info("Discovered I'm serving a work unit that's now " +
-            "pegged to someone else. Shutting down {}", workUnit));
-          shutdownWork(workUnit);
-
-        } else if (workUnitMap.contains(workUnit) && !workUnitMap.get(workUnit).equals(myNodeID) &&
-            !claimedForHandoff.contains(workUnit) && !znodeIsMe(claimPath)) {
-            LOG.info("Discovered I'm serving a work unit that's now " +
-                    "claimed by {} according to ZooKeeper. Shutting down {}",
-                    workUnitMap.get(workUnit), workUnit);
-            shutdownWork(workUnit);
+        for (String workUnit : myWorkUnits) {
+            String claimPath = workUnitClaimPath(workUnit);
+            if (!balancingPolicy.isFairGame(workUnit) && !balancingPolicy.isPeggedToMe(workUnit)) {
+                LOG.info("Discovered I'm serving a work unit that's now " +
+                        "pegged to someone else. Shutting down {}", workUnit);
+                        shutdownWork(workUnit, true);
+            } else if (workUnitMap.containsKey(workUnit) && !workUnitMap.get(workUnit).equals(myNodeID)
+                    && !claimedForHandoff.contains(workUnit) && !znodeIsMe(claimPath)) {
+                LOG.info("Discovered I'm serving a work unit that's now " +
+                        "claimed by {} according to ZooKeeper. Shutting down {}",
+                        workUnitMap.get(workUnit), workUnit);
+                shutdownWork(workUnit, true);
+            }
         }
-      }
     }
 
     public String workUnitClaimPath(String workUnit) {
@@ -587,15 +591,15 @@ public class Cluster
      * Otherwise, just call "startWork" on the listener and let the client have at it.
      * TODO: Refactor to remove check and cast.
      */
-    public void startWork(String workUnit, Meter meter) {
+    public void startWork(String workUnit) {
         LOG.info("Successfully claimed {}: {}. Starting...", config.workUnitName, workUnit);
         final boolean added = myWorkUnits.add(workUnit);
 
         if (added) {
             if (balancingPolicy instanceof MeteredBalancingPolicy) {
                 MeteredBalancingPolicy mbp = (MeteredBalancingPolicy) balancingPolicy;
-                val meter = mbp.persistentMeterCache.getOrElseUpdate(
-                        workUnit, metrics.meter(workUnit, "processing"));
+                Meter meter = mbp.persistentMeterCache.getOrElseUpdate(workUnit,
+                        metrics.meter(workUnit, "processing"));
                 mbp.meters.put(workUnit, meter);
                 ((SmartListener) listener).startWork(workUnit, meter);
             } else {

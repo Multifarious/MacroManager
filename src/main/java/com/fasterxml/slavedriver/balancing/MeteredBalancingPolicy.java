@@ -4,34 +4,31 @@ import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.TimerTask;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
+import com.codahale.metrics.Gauge;
 import com.fasterxml.slavedriver.Cluster;
+import com.fasterxml.slavedriver.SimpleListener;
+import com.fasterxml.slavedriver.SmartListener;
 import com.fasterxml.slavedriver.util.Strings;
 
 public class MeteredBalancingPolicy
     extends BalancingPolicy
 {
-    public MeteredBalancingPolicy(Cluster c) {
+    public val meters = AtomicMap.atomicNBHM[String, Meter];
+    public val persistentMeterCache = AtomicMap.atomicNBHM[String, Meter];
+    private Gauge<Double> loadGauge = metrics.<Double>gauge("my_load") { myLoad() };
+    private ScheduledFuture loadFuture;
+
+    public MeteredBalancingPolicy(Cluster c, SimpleListener listener) {
         super(c);
-    }
-
-    /*
-    val meters = AtomicMap.atomicNBHM[String, Meter]
-            val persistentMeterCache = AtomicMap.atomicNBHM[String, Meter]
-            val loadGauge = metrics.gauge[Double]("my_load") { myLoad() }
-            var loadFuture : Option[ScheduledFuture[_]] = None
-
-            override def init() : BalancingPolicy = {
-              if (!cluster.listener.isInstanceOf[SmartListener]) {
+        if (!(listener instanceof SmartListener)) {
                 throw new RuntimeException("Ordasity's metered balancing policy must be initialized with " +
                   "a SmartListener, but you provided a simple listener. Please flip that so we can tick " +
-                  "the meter as your application performs work!")
-              }
-
-              this
-            }
-            */
+                  "the meter as your application performs work!");
+        }
+    }
 
     /**
      * Begins by claiming all work units that are pegged to this node.
