@@ -87,6 +87,7 @@ public class Cluster
 
     // Metrics
 
+    final private MetricRegistry metrics;
     final private Gauge<String> listGauge;
     final private Gauge<Integer> countGauge;
     final private Gauge<String> connStateGauge;
@@ -108,11 +109,12 @@ public class Cluster
         this.config = config;
         myNodeID = config.nodeId;
         shortName = config.workUnitShortName;
+        this.metrics = metrics;
 
         claimer = new Claimer(metrics, this, "ordasity-claimer-" + name);
         handoffResultsListener = new HandoffResultsListener(this);
         balancingPolicy = config.useSmartBalancing
-                ? new MeteredBalancingPolicy(this, l)
+                ? new MeteredBalancingPolicy(this, metrics, l)
                 : new CountBalancingPolicy(this)
                 ;
         pool = new AtomicReference<ScheduledThreadPoolExecutor>(createScheduledThreadExecutor());
@@ -217,8 +219,8 @@ public class Cluster
         pool.get().schedule(r, delay, unit);
     }
 
-    public void scheduleAtFixedRate(Runnable r, long initial, long period, TimeUnit unit) {
-        pool.get().scheduleAtFixedRate(r, initial, period, unit);
+    public ScheduledFuture<?> scheduleAtFixedRate(Runnable r, long initial, long period, TimeUnit unit) {
+        return pool.get().scheduleAtFixedRate(r, initial, period, unit);
     }
     
     // // // Active API
@@ -622,9 +624,7 @@ public class Cluster
         if (added) {
             if (balancingPolicy instanceof MeteredBalancingPolicy) {
                 MeteredBalancingPolicy mbp = (MeteredBalancingPolicy) balancingPolicy;
-                Meter meter = mbp.persistentMeterCache.getOrElseUpdate(workUnit,
-                        metrics.meter(workUnit, "processing"));
-                mbp.meters.put(workUnit, meter);
+                Meter meter = mbp.findOrCreateMetrics(workUnit);
                 ((SmartListener) listener).startWork(workUnit, meter);
             } else {
                 ((ClusterListener) listener).startWork(workUnit);

@@ -1,35 +1,63 @@
 package com.fasterxml.slavedriver.balancing;
 
-import java.util.Iterator;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.TimerTask;
+import java.util.*;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
+import org.apache.zookeeper.CreateMode;
+
 import com.codahale.metrics.Gauge;
+import com.codahale.metrics.Meter;
+import com.codahale.metrics.MetricRegistry;
 import com.fasterxml.slavedriver.Cluster;
+import com.fasterxml.slavedriver.NodeInfo;
 import com.fasterxml.slavedriver.SimpleListener;
 import com.fasterxml.slavedriver.SmartListener;
+import com.fasterxml.slavedriver.util.JsonUtil;
 import com.fasterxml.slavedriver.util.Strings;
+import com.fasterxml.slavedriver.util.ZKUtils;
 
 public class MeteredBalancingPolicy
     extends BalancingPolicy
 {
-    public val meters = AtomicMap.atomicNBHM[String, Meter];
-    public val persistentMeterCache = AtomicMap.atomicNBHM[String, Meter];
-    private Gauge<Double> loadGauge = metrics.<Double>gauge("my_load") { myLoad() };
+    protected final Map<String,Meter> meters = new HashMap<String, Meter>();
+//    public val meters = AtomicMap.atomicNBHM[String, Meter];
+
+    protected final Map<String, Meter> persistentMeterCache = new HashMap<String, Meter>();
+//    public val persistentMeterCache = AtomicMap.atomicNBHM[String, Meter];
+
+//    private final Gauge<Double> loadGauge;
+    /*
+    loadGauge = new Gauge<Double>() {
+        @Override
+        public Double getValue() {
+            return myLoad();
+        }
+    };
+*/
+    
     private ScheduledFuture<?> loadFuture;
 
-    public MeteredBalancingPolicy(Cluster c, SimpleListener listener) {
+    private final MetricRegistry metrics;
+    
+    public MeteredBalancingPolicy(Cluster c, MetricRegistry metrics,
+            SimpleListener listener) {
         super(c);
         if (!(listener instanceof SmartListener)) {
                 throw new RuntimeException("Ordasity's metered balancing policy must be initialized with " +
                   "a SmartListener, but you provided a simple listener. Please flip that so we can tick " +
                   "the meter as your application performs work!");
         }
+        this.metrics = metrics;
     }
 
+    public Meter findOrCreateMetrics(String workUnit)
+    {
+        Meter meter = persistentMeterCache.getOrElseUpdate(workUnit,
+                metrics.meter(workUnit, "processing"));
+        meters.put(workUnit, meter);
+    }
+    
     /**
      * Begins by claiming all work units that are pegged to this node.
      * Then, continues to claim work from the available pool until we've claimed
@@ -110,16 +138,33 @@ public class MeteredBalancingPolicy
         Runnable sendLoadToZookeeper = new Runnable() {
             @Override
             public void run() {
+                final List<String> loads = new ArrayList<String>();
+                synchronized (meters) {
+                    for (Map.Entry<String,Meter> entry : meters.entrySet()) {
+                        final String workUnit = entry.getKey();
+                        loads.add(String.format("/%s/meta/workload/%s", cluster.name, workUnit));
+                        loads.add(String.valueOf(entry.getValue().getOneMinuteRate()));
+                    }
+                }
+
+                Iterator<String> it = loads.iterator();
+                while (it.hasNext()) {
+                    final String path = it.next();
+                    final String rate = it.next();
+                    try {
+                        ZKUtils.setOrCreate(cluster.zk, path, rate, CreateMode.PERSISTENT);
+                    } catch (Exception e) {
+                        // should we fail the loop too?
+                        LOG.error("Problems trying to store load rate for {} (value {}): ({}) {}",
+                                path, rate, e.getClass().getName(), e.getMessage());
+                    }
+                }
+
+                String nodeLoadPath = String.format("/%s/nodes/%s", cluster.name, cluster.myNodeID);
                 try {
-                    meters.foreach { case(workUnit, meter) =>
-                      val loadPath = "/%s/meta/workload/%s".format(cluster.name, workUnit);
-                      ZKUtils.setOrCreate(cluster.zk, loadPath, meter.oneMinuteRate.toString, CreateMode.PERSISTENT);
-
-                    val myInfo = new NodeInfo(cluster.getState.toString, cluster.zk.get().getSessionId);
-                    val nodeLoadPath = "/%s/nodes/%s".format(cluster.name, cluster.myNodeID);
-                    val myInfoEncoded = JsonUtils.OBJECT_MAPPER.writeValueAsString(myInfo);
+                    NodeInfo myInfo = new NodeInfo(cluster.getState().toString(), cluster.zk.get().getSessionId());
+                    byte[] myInfoEncoded = JsonUtil.asJSONBytes(myInfo);
                     ZKUtils.setOrCreate(cluster.zk, nodeLoadPath, myInfoEncoded, CreateMode.EPHEMERAL);
-
                     LOG.info("My load: {}", myLoad());
                 } catch (Exception e) {
                     LOG.error("Error reporting load info to ZooKeeper.", e);
@@ -143,7 +188,8 @@ public class MeteredBalancingPolicy
         final double startingLoad = myLoad();
         double currentLoad = startingLoad;
         List<String> drainList = new LinkedList<String>();
-        List<String> eligibleToDrop = new LinkedList<String>(cluster.myWorkUnits -- cluster.workUnitsPeggedToMe);
+        Set<String> eligibleToDrop = new LinkedHashSet<String>(cluster.myWorkUnits);
+        eligibleToDrop.removeAll(cluster.workUnitsPeggedToMe);
 
         for (String workUnit : eligibleToDrop) {
             if (currentLoad <= targetLoad) {
@@ -182,7 +228,11 @@ public class MeteredBalancingPolicy
                   }
                   String workUnit = it.next();
                   if (useHandoff) {
-                      cluster.requestHandoff(workUnit);
+                      try {
+                          cluster.requestHandoff(workUnit);
+                      } catch (Exception e) {
+                          LOG.warn("Problems trying to request handoff of "+workUnit, e);
+                      }
                   } else {
                       cluster.shutdownWork(workUnit, true);
                   }
@@ -205,6 +255,8 @@ public class MeteredBalancingPolicy
 
     @Override
     public void onShutdownWork(String workUnit) {
-        meters.remove(workUnit);
+        synchronized (meters) {
+            meters.remove(workUnit);
+        }
     }
 }

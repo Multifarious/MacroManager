@@ -232,7 +232,11 @@ public abstract class BalancingPolicy
                }
                String workUnit = drainIt.next();
                if (useHandoff && !isPeggedToMe(workUnit)) {
-                   cluster.requestHandoff(workUnit);
+                   try {
+                       cluster.requestHandoff(workUnit);
+                   } catch (Exception e) {
+                       LOG.warn("Problems trying to request handoff of "+workUnit, e);
+                   }
                } else {
                    cluster.shutdownWork(workUnit, true);
                }
