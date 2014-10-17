@@ -3,6 +3,7 @@ package com.fasterxml.slavedriver.balancing;
 import java.util.Set;
 
 import com.fasterxml.slavedriver.Cluster;
+import com.fasterxml.slavedriver.listeners.HandoffResultsListener;
 import com.fasterxml.slavedriver.util.Strings;
 
 /**
@@ -13,8 +14,11 @@ import com.fasterxml.slavedriver.util.Strings;
 public class CountBalancingPolicy
     extends BalancingPolicy
 {
-    public CountBalancingPolicy(Cluster c) {
+    protected final HandoffResultsListener handoffListener;
+    
+    public CountBalancingPolicy(Cluster c, HandoffResultsListener l) {
         super(c);
+        handoffListener = l;
     }
 
     /**
@@ -36,19 +40,21 @@ public class CountBalancingPolicy
             LOG.debug("Claiming {} pegged to me, and up to {} more.", config.workUnitName, maxToClaim);
 
             Set<String> unclaimed = getUnclaimed();
-            LOG.debug("Handoff requests: {}, Handoff Results: {}, Unclaimed: {}",
-                    Strings.mkstring(cluster.handoffRequests, ", "),
-                    Strings.mkstring(cluster.handoffResults, ", "),
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("Handoff requests: {}, Handoff Results: {}, Unclaimed: {}",
+                        cluster.descForHandoffRequests(),
+                        cluster.descForHandoffResults(),
                     Strings.mkstring(unclaimed, ", "));
+            }
 
             for (String workUnit : unclaimed) {
                  if ((isFairGame(workUnit) && claimed < maxToClaim) || isPeggedToMe(workUnit)) {
-                   if (config.useSoftHandoff && cluster.handoffRequests.containsKey(workUnit)
+                   if (config.useSoftHandoff && cluster.containsHandoffRequest(workUnit)
                            && attemptToClaim(workUnit, true)) {
                        LOG.info("Accepted handoff of {}.", workUnit);
-                       cluster.handoffResultsListener.finishHandoff(workUnit);
+                       handoffListener.finishHandoff(workUnit);
                        claimed += 1;
-                   } else if (!cluster.handoffRequests.containsKey(workUnit) && attemptToClaim(workUnit)) {
+                   } else if (!cluster.containsHandoffRequest(workUnit) && attemptToClaim(workUnit)) {
                        claimed += 1;
                    }
                  }

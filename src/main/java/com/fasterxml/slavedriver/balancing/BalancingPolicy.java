@@ -57,8 +57,8 @@ public abstract class BalancingPolicy
         synchronized (cluster.allWorkUnits) {
             LinkedHashSet<String> result = new LinkedHashSet<String>(cluster.allWorkUnits.keySet());
             result.removeAll(cluster.workUnitMap.keySet());
-            result.addAll(cluster.handoffRequests.keySet());
-            result.removeAll(cluster.handoffResults.keySet());
+            result.addAll(cluster.getHandoffWorkUnits());
+            result.removeAll(cluster.getHandoffResultWorkUnits());
             result.removeAll(cluster.myWorkUnits);
             return result;
         }

@@ -8,24 +8,12 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.io.IOException;
 import java.lang.management.ManagementFactory;
 
+import javax.management.InstanceAlreadyExistsException;
 import javax.management.ObjectName;
 
 import com.codahale.metrics.Gauge;
 import com.codahale.metrics.Meter;
 import com.codahale.metrics.MetricRegistry;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.fasterxml.slavedriver.balancing.BalancingPolicy;
-import com.fasterxml.slavedriver.balancing.CountBalancingPolicy;
-import com.fasterxml.slavedriver.balancing.MeteredBalancingPolicy;
-import com.fasterxml.slavedriver.listeners.ClusterNodesChangedListener;
-import com.fasterxml.slavedriver.listeners.HandoffResultsListener;
-import com.fasterxml.slavedriver.listeners.VerifyIntegrityListener;
-import com.fasterxml.slavedriver.util.JsonUtil;
-import com.fasterxml.slavedriver.util.NamedThreadFactory;
-import com.fasterxml.slavedriver.util.Strings;
-import com.fasterxml.slavedriver.util.ZKDeserializers;
-import com.fasterxml.slavedriver.util.ZKException;
-import com.fasterxml.slavedriver.util.ZKUtils;
 import com.twitter.common.quantity.Time;
 import com.twitter.common.quantity.Amount;
 import com.twitter.common.zookeeper.ZooKeeperClient;
@@ -41,55 +29,70 @@ import org.cliffc.high_scale_lib.NonBlockingHashSet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.slavedriver.balancing.BalancingPolicy;
+import com.fasterxml.slavedriver.balancing.CountBalancingPolicy;
+import com.fasterxml.slavedriver.balancing.MeteredBalancingPolicy;
+import com.fasterxml.slavedriver.listeners.ClusterNodesChangedListener;
+import com.fasterxml.slavedriver.listeners.HandoffResultsListener;
+import com.fasterxml.slavedriver.listeners.VerifyIntegrityListener;
+import com.fasterxml.slavedriver.util.*;
+
 public class Cluster
     implements ClusterMBean
     //with Instrumented
 {
+    final public static String PROJECT_NAME = "SlaveDriver";
+    
     final protected Logger LOG = LoggerFactory.getLogger(getClass());
 
-    // Register with JMX for management / instrumentation.
-    /*
-    ManagementFactory.getPlatformMBeanServer()
-        .registerMBean(this, new ObjectName(name + ":" + "name=Cluster"));
-        */
+    // // Basic configuration
     
+    // left public+final for simplicity; not a big deal either way
     final public String name;
     final public String myNodeID;
 
     final private String shortName;
     final private SimpleListener listener;
     final private ClusterConfig config;
+    final protected AtomicReference<NodeState> state = new AtomicReference<NodeState>(NodeState.Fresh);
+    
+    // // Helper objects
+
+    final protected HandoffResultsListener handoffResultsListener;
+    final private BalancingPolicy balancingPolicy;
+    
+    // // Various on/off sets
     
     final private AtomicBoolean watchesRegistered = new AtomicBoolean(false);
     final private AtomicBoolean initialized = new AtomicBoolean(false);
     final private CountDownLatch initializedLatch = new CountDownLatch(1);
-    final AtomicBoolean connected = new AtomicBoolean(false);
+    final protected AtomicBoolean connected = new AtomicBoolean(false);
 
-    // Cluster, node, and work unit state
-    public Map<String,NodeInfo> nodes;
-    public final Set<String> myWorkUnits = new NonBlockingHashSet<String>();
-    public Map<String,ObjectNode> allWorkUnits;
-    public Map<String,String> workUnitMap;
-    public Map<String,String> handoffRequests;
-    public Map<String,String> handoffResults;
+    // Cluster, node, and work unit state. Much of it public due to historical reasons;
+    // should encapsulate these more
+    final public Set<String> myWorkUnits = new NonBlockingHashSet<String>();
+    protected Map<String,String> handoffRequests;
+    protected Map<String,String> handoffResults;
     public Set<String> claimedForHandoff = new NonBlockingHashSet<String>();
     private Map<String,Double> loadMap = Collections.emptyMap();
     public Set<String> workUnitsPeggedToMe = new NonBlockingHashSet<String>();
     final private Claimer claimer;
 
-    public final AtomicReference<NodeState> state = new AtomicReference<NodeState>(NodeState.Fresh);
+    // // ZooKeeper-backed Maps
     
-    public final HandoffResultsListener handoffResultsListener;
-
-    final private BalancingPolicy balancingPolicy;
-
+    public Map<String,ObjectNode> allWorkUnits;
+    public Map<String,NodeInfo> nodes;
+    public Map<String,String> workUnitMap;
+    
     // Scheduled executions
-    private final AtomicReference<ScheduledThreadPoolExecutor> pool;
+
+    final private AtomicReference<ScheduledThreadPoolExecutor> pool;
     private ScheduledFuture<?> autoRebalanceFuture; // Option[ScheduledFuture[_]] = None
 
     // Metrics
 
-    final private MetricRegistry metrics;
+//    final private MetricRegistry metrics;
     final private Gauge<String> listGauge;
     final private Gauge<Integer> countGauge;
     final private Gauge<String> connStateGauge;
@@ -147,13 +150,13 @@ public class Cluster
         this.config = config;
         myNodeID = config.nodeId;
         shortName = config.workUnitShortName;
-        this.metrics = metrics;
+//        this.metrics = metrics;
 
         claimer = new Claimer(metrics, this, "ordasity-claimer-" + name);
         handoffResultsListener = new HandoffResultsListener(this);
         balancingPolicy = config.useSmartBalancing
-                ? new MeteredBalancingPolicy(this, metrics, l)
-                : new CountBalancingPolicy(this)
+                ? new MeteredBalancingPolicy(this, handoffResultsListener, metrics, l)
+                : new CountBalancingPolicy(this, handoffResultsListener);
                 ;
         pool = new AtomicReference<ScheduledThreadPoolExecutor>(createScheduledThreadExecutor());
         
@@ -185,11 +188,21 @@ public class Cluster
             };
         };
         metrics.register("node_state", nodeStateGauge);
-    
+
+        // Register with JMX for management / instrumentation.
+        try {
+            ManagementFactory.getPlatformMBeanServer()
+                .registerMBean(this, new ObjectName(name + ":" + "name=Cluster"));
+        } catch (InstanceAlreadyExistsException e) {
+            // probably harmless
+            LOG.warn("JMX bean already registered; ignoring");
+        } catch (Exception e) {
+            LOG.error("Problems registering JMX info: "+e.getMessage(), e);
+        }
     }
 
     private ScheduledThreadPoolExecutor createScheduledThreadExecutor() {
-        return new ScheduledThreadPoolExecutor(1, new NamedThreadFactory("ordasity-scheduler"));
+        return new ScheduledThreadPoolExecutor(1, new NamedThreadFactory(PROJECT_NAME + "-scheduler"));
     }
     
     // // // Trivial accessors
@@ -249,6 +262,34 @@ public class Cluster
             }
         }
         return 0.0;
+    }
+
+    public String descForHandoffRequests() {
+        return Strings.mkstring(handoffRequests, ", ");
+    }
+
+    public String descForHandoffResults() {
+        return Strings.mkstring(handoffResults, ", ");
+    }
+
+    public boolean containsHandoffRequest(String workUnit) {
+        return handoffRequests.containsKey(workUnit);
+    }
+
+    public boolean containsHandoffResult(String workUnit) {
+        return handoffResults.containsKey(workUnit);
+    }
+
+    public Set<String> getHandoffWorkUnits() {
+        return handoffRequests.keySet();
+    }
+
+    public Set<String> getHandoffResultWorkUnits() {
+        return handoffResults.keySet();
+    }
+
+    public String getHandoffResult(String workUnit) {
+        return handoffResults.get(workUnit);
     }
     
     // // // Access to helper objects

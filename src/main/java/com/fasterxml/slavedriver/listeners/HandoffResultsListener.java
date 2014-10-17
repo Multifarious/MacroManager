@@ -1,6 +1,5 @@
 package com.fasterxml.slavedriver.listeners;
 
-import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.zookeeper.WatchedEvent;
@@ -48,7 +47,7 @@ public class HandoffResultsListener
             return;
         }
         if (iRequestedHandoff(workUnit)) {
-            String str = cluster.handoffResults.get(workUnit);
+            String str = cluster.getHandoffResult(workUnit);
             LOG.info("Handoff of {} to {} completed. Shutting down {} in {} seconds.", workUnit,
                     (str == null) ? "(None)" : str,
                     workUnit, clusterConfig.handoffShutdownDelay);
@@ -58,13 +57,13 @@ public class HandoffResultsListener
     }
     
     /**
-     * Determines if this Ordasity node requested handoff of a work unit to someone else.
+     * Determines if this node requested handoff of a work unit to someone else.
      * I have requested handoff of a work unit if it's currently a member of my active set
      * and its destination node is another node in the cluster.
      */
     private boolean iRequestedHandoff(String workUnit)
     {
-        String destinationNode = cluster.handoffResults.get(workUnit);
+        String destinationNode = cluster.getHandoffResult(workUnit);
         return (destinationNode != null)
                 && cluster.myWorkUnits.contains(workUnit)
                 && !destinationNode.equals("")
@@ -78,13 +77,12 @@ public class HandoffResultsListener
      */
     private Runnable shutdownAfterHandoff(final String workUnit)
     {
-        final Map<String,String> handoffResults = cluster.handoffResults;
         final Cluster cluster = this.cluster;
         final Logger log = LOG;
         return new Runnable() {
             @Override
             public void run() {
-                String str = handoffResults.get(workUnit);
+                String str = cluster.getHandoffResult(workUnit);
                 log.info("Shutting down {} following handoff to {}.",
                         workUnit, (str == null) ? "(None)" : str);
                 cluster.shutdownWork(workUnit, /*doLog =*/ false);

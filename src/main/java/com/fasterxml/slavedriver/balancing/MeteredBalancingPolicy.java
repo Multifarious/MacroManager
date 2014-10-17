@@ -10,6 +10,7 @@ import com.codahale.metrics.Gauge;
 import com.codahale.metrics.Meter;
 import com.codahale.metrics.MetricRegistry;
 import com.fasterxml.slavedriver.*;
+import com.fasterxml.slavedriver.listeners.HandoffResultsListener;
 import com.fasterxml.slavedriver.util.JsonUtil;
 import com.fasterxml.slavedriver.util.Strings;
 import com.fasterxml.slavedriver.util.ZKUtils;
@@ -25,15 +26,19 @@ public class MeteredBalancingPolicy
     private ScheduledFuture<?> loadFuture;
 
     private final MetricRegistry metrics;
+
+    protected final HandoffResultsListener handoffListener;
     
-    public MeteredBalancingPolicy(Cluster c, MetricRegistry metrics,
-            SimpleListener listener) {
+    public MeteredBalancingPolicy(Cluster c, HandoffResultsListener l,
+            MetricRegistry metrics, SimpleListener listener)
+    {
         super(c);
         if (!(listener instanceof SmartListener)) {
                 throw new RuntimeException("Ordasity's metered balancing policy must be initialized with " +
                   "a SmartListener, but you provided a simple listener. Please flip that so we can tick " +
                   "the meter as your application performs work!");
         }
+        handoffListener = l;
         this.metrics = metrics;
 
         // 17-Oct-2014, tatu: Not 100% this was correct translation of the intent; would seem
@@ -82,10 +87,10 @@ public class MeteredBalancingPolicy
             LinkedList<String> unclaimed = new LinkedList<String>(getUnclaimed());
             while (myLoad() <= evenD && !unclaimed.isEmpty()) {
                 final String workUnit = unclaimed.poll();
-                if (config.useSoftHandoff && cluster.handoffRequests.containsKey(workUnit)
+                if (config.useSoftHandoff && cluster.containsHandoffRequest(workUnit)
                         && isFairGame(workUnit) && attemptToClaim(workUnit, true)) {
                     LOG.info(String.format(workUnit));
-                    cluster.handoffResultsListener.finishHandoff(workUnit);
+                    handoffListener.finishHandoff(workUnit);
                 } else if (isFairGame(workUnit)) {
                     attemptToClaim(workUnit);
                 }
