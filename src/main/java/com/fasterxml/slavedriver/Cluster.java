@@ -59,7 +59,7 @@ public class Cluster
     final private AtomicBoolean connected = new AtomicBoolean(false);
 
     // Cluster, node, and work unit state
-    private Map<String,NodeInfo> nodes;
+    public Map<String,NodeInfo> nodes;
     public final Set<String> myWorkUnits = new NonBlockingHashSet<String>();
     public Map<String,ObjectNode> allWorkUnits;
     public Map<String,String> workUnitMap;
@@ -152,6 +152,18 @@ public class Cluster
     public boolean isInitialized() {
         return initialized.get();
     }
+
+    public boolean isMe(String other) {
+        return myNodeID.equals(other);
+    }
+    
+    /**
+     * Given a path, determines whether or not the value of a ZNode is my node ID.
+     */
+    public boolean znodeIsMe(String path) {
+        String value = ZKUtils.get(zk, path);
+        return (value != null && value == myNodeID);
+    }
     
     public ClusterConfig getConfig() { return config; }
 
@@ -159,6 +171,10 @@ public class Cluster
         return state.get();
     }
 
+    public boolean hasState(NodeState s) {
+        return state.get() == s;
+    }
+    
     // // // Access to helper objects
     
     public void schedule(Runnable r, long delay, TimeUnit unit) {
@@ -506,7 +522,7 @@ public class Cluster
       * Requests that another node take over for a work unit by creating a ZNode
       * at handoff-requests. This will trigger a claim cycle and adoption.
      */
-    private void requestHandoff(String workUnit) {
+    public void requestHandoff(String workUnit) {
         LOG.info("Requesting handoff for {}.", workUnit);
         ZKUtils.createEphemeral(zk, "/" + name + "/handoff-requests/" + workUnit);
     }
@@ -573,18 +589,18 @@ public class Cluster
     /**
      * Shuts down a work unit by removing the claim in ZK and calling the listener.
      */
-    private boolean shutdownWork(String workUnit, boolean doLog /*true*/ ) {
-      if (doLog) {
-          LOG.info("Shutting down {}: {}...", config.workUnitName, workUnit);
-      }
-      myWorkUnits.remove(workUnit);
-      claimedForHandoff.remove(workUnit);
-      balancingPolicy.onShutdownWork(workUnit);
-      try {
-          listener.shutdownWork(workUnit);
-      } finally {
-          ZKUtils.deleteAtomic(zk, workUnitClaimPath(workUnit), myNodeID);
-      }
+    public boolean shutdownWork(String workUnit, boolean doLog /*true*/ ) {
+        if (doLog) {
+            LOG.info("Shutting down {}: {}...", config.workUnitName, workUnit);
+        }
+        myWorkUnits.remove(workUnit);
+        claimedForHandoff.remove(workUnit);
+        balancingPolicy.onShutdownWork(workUnit);
+        try {
+            listener.shutdownWork(workUnit);
+        } finally {
+            ZKUtils.deleteAtomic(zk, workUnitClaimPath(workUnit), myNodeID);
+        }
     }
 
 
@@ -599,14 +615,6 @@ public class Cluster
         if (state.get() != NodeState.Fresh) {
             balancingPolicy.rebalance();
         }
-    }
-
-    /**
-     * Given a path, determines whether or not the value of a ZNode is my node ID.
-     */
-    public boolean znodeIsMe(String path) {
-        String value = ZKUtils.get(zk, path);
-        return (value != null && value == myNodeID);
     }
 
     /**

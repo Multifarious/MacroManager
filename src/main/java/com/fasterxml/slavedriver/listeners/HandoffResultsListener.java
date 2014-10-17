@@ -1,5 +1,7 @@
 package com.fasterxml.slavedriver.listeners;
 
+import java.util.concurrent.TimeUnit;
+
 import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.Watcher;
 import org.apache.zookeeper.data.Stat;
@@ -41,15 +43,17 @@ public class HandoffResultsListener
      * If I'm the node that requested to hand off this work unit to
      * another node, shut it down after <config> seconds.
      */
-    private boolean apply(String workUnit) {
+    private void apply(String workUnit) {
         if (!cluster.isInitialized()) {
             return;
         }
         if (iRequestedHandoff(workUnit)) {
-            LOG.info("Handoff of %s to %s completed. Shutting down %s in %s seconds.".format(workUnit,
-                    cluster.getOrElse(cluster.handoffResults, workUnit, "(None)"), workUnit, clusterConfig.handoffShutdownDelay));
+            String str = cluster.handoffResults.get(workUnit);
+            LOG.info("Handoff of {} to {} completed. Shutting down {} in {} seconds.", workUnit,
+                    (str == null) ? "(None)" : str,
+                    workUnit, clusterConfig.handoffShutdownDelay);
             ZKUtils.delete(cluster.zk, String.format("/%s/handoff-requests/%s", cluster.name, workUnit));
-            cluster.schedule(shutdownAfterHandoff(workUnit), clusterConfig.handoffShutdownDelay, TimeUnit.SECONDS)
+            cluster.schedule(shutdownAfterHandoff(workUnit), clusterConfig.handoffShutdownDelay, TimeUnit.SECONDS);
         }
     }
     
@@ -60,9 +64,11 @@ public class HandoffResultsListener
      */
     private boolean iRequestedHandoff(String workUnit)
     {
-        val destinationNode = cluster.getOrElse(cluster.handoffResults, workUnit, "")
-                cluster.myWorkUnits.contains(workUnit) && !destinationNode.equals("") &&
-                    !cluster.isMe(destinationNode)
+        String destinationNode = cluster.handoffResults.get(workUnit);
+        return (destinationNode != null)
+                && cluster.myWorkUnits.contains(workUnit)
+                && !destinationNode.equals("")
+                && !cluster.isMe(destinationNode);
     }
 
     /**
@@ -75,13 +81,14 @@ public class HandoffResultsListener
         return new Runnable() {
             @Override
             public void run() {
-                LOG.info("Shutting down %s following handoff to %s.".format(
-                        workUnit, cluster.getOrElse(cluster.handoffResults, workUnit, "(None)")))
-                  cluster.shutdownWork(workUnit, doLog = false)
+                String str = cluster.handoffResults.get(workUnit);
+                LOG.info("Shutting down {} following handoff to {}.",
+                        workUnit, (str == null) ? "(None)" : str);
+                cluster.shutdownWork(workUnit, /*doLog =*/ false);
 
-                  if (cluster.myWorkUnits.size() == 0 && cluster.state.get() == NodeState.Draining) {
+                if (cluster.hasState(NodeState.Draining) && cluster.myWorkUnits.isEmpty()) {
                     cluster.shutdown();
-                  }
+                }
             }
         };
     }

@@ -5,6 +5,7 @@ import org.slf4j.LoggerFactory;
 
 import com.fasterxml.slavedriver.Cluster;
 import com.fasterxml.slavedriver.NodeInfo;
+import com.fasterxml.slavedriver.util.Strings;
 import com.twitter.common.zookeeper.ZooKeeperMap;
 
 public class ClusterNodesChangedListener
@@ -21,7 +22,7 @@ public class ClusterNodesChangedListener
     @Override
     public void nodeChanged(String nodeName, NodeInfo data) {
         if (cluster.isInitialized()) {
-            LOG.info("Nodes: %s".format(cluster.nodes.map(n => n._1).mkString(", ")));
+            LOG.info("Nodes: {}", Strings.mkstringForKeys(cluster.nodes, ", "));
             cluster.requestClaim();
             cluster.verifyIntegrity();
         }

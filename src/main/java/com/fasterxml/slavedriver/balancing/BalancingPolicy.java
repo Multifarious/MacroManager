@@ -1,8 +1,13 @@
 package com.fasterxml.slavedriver.balancing;
 
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.TimerTask;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
@@ -14,7 +19,10 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.slavedriver.Cluster;
 import com.fasterxml.slavedriver.ClusterConfig;
+import com.fasterxml.slavedriver.NodeInfo;
+import com.fasterxml.slavedriver.NodeState;
 import com.fasterxml.slavedriver.ZKUtils;
+import com.fasterxml.slavedriver.util.Strings;
 import com.twitter.common.zookeeper.ZooKeeperClient.ZooKeeperConnectionException;
 
 public abstract class BalancingPolicy
@@ -40,10 +48,15 @@ public abstract class BalancingPolicy
 
     public int activeNodeSize()
     {
-      cluster.nodes.filter { n =>
-        val (nodeName, nodeInfo) = n
-        nodeInfo != null && nodeInfo.state == NodeState.Started.toString
-      }.size
+        int count = 0;
+        final String STARTED = NodeState.Started.toString();
+        
+        for (NodeInfo n : cluster.nodes.values()) {
+            if (n != null && STARTED.equals(n.state)) {
+                ++count;
+            }
+        }
+        return count;
     }
 
     /**
@@ -51,11 +64,12 @@ public abstract class BalancingPolicy
      */
     public Set<String> getUnclaimed() {
         synchronized (cluster.allWorkUnits) {
-      cluster.allWorkUnits.keys.toSet --
-      cluster.workUnitMap.keys.toSet ++
-      cluster.handoffRequests.keySet --
-      cluster.handoffResults.keys --
-      cluster.myWorkUnits
+            LinkedHashSet<String> result = new LinkedHashSet<String>(cluster.allWorkUnits.keySet());
+            result.removeAll(cluster.workUnitMap.keySet());
+            result.addAll(cluster.handoffRequests.keySet());
+            result.removeAll(cluster.handoffResults.keySet());
+            result.removeAll(cluster.myWorkUnits);
+            return result;
         }
     }
 
@@ -78,12 +92,11 @@ public abstract class BalancingPolicy
            }
            LOG.debug("Pegged status for {}: {}.", workUnit, pegged);
            return pegged.asText().equals(cluster.myNodeID);
-     } catch (Exception e) {
-         LOG.error(String.format("Error parsing mapping for %s: %s", workUnit, workUnitData), e);
-         return true;
-     }
+       } catch (Exception e) {
+           LOG.error(String.format("Error parsing mapping for %s: %s", workUnit, workUnitData), e);
+           return true;
+       }
    }
-
 
    /**
     * Determines whether or not a given work unit is pegged to this instance.
@@ -198,36 +211,43 @@ public abstract class BalancingPolicy
              msgPrefix, amountToDrain, cluster.myWorkUnits.size(), config.workUnitName, config.drainTime);
 
        // Build a list of work units to hand off.
-       final LinkedList<String> toHandOff = new LinkedList<String>();
-       List<String> wuList = new LinkedList<String>(cluster.myWorkUnits -- cluster.workUnitsPeggedToMe);
-       for (i <- (0 to amountToDrain - 1)) {
-           if (wuList.size - 1 >= i) toHandOff.add(wuList(i));
+       LinkedHashSet<String> wuList = new LinkedHashSet<String>(cluster.myWorkUnits);
+       wuList.removeAll(cluster.workUnitsPeggedToMe);
+
+       final ArrayList<String> toHandOff = new ArrayList<String>();
+       Iterator<String> it = wuList.iterator();
+       for (int i = amountToDrain; it.hasNext() && i > 0; --i) {
+           toHandOff.add(it.next());
        }
 
        final int drainInterval = (int) (((double) config.drainTime / (double) toHandOff.size()) * 1000);
+       final Iterator<String> drainIt = toHandOff.iterator();
 
        TimerTask handoffTask = new TimerTask() {
+           @Override
            public void run() {
-         if (toHandOff.isEmpty()) {
-           if (targetCount == 0 && doShutdown)  {
-             cluster.completeShutdown()
-           }
-           latch.foreach(l => l.countDown());
-           return;
-         } else {
-           String workUnit = toHandOff.poll();
-           if (useHandoff && !isPeggedToMe(workUnit)) {
-               cluster.requestHandoff(workUnit);
-           } else {
-               cluster.shutdownWork(workUnit);
-           }
-         }
-         cluster.schedule(this, drainInterval, TimeUnit.MILLISECONDS);
+               if (!drainIt.hasNext()) {
+                   if (targetCount == 0 && doShutdown)  {
+                       cluster.completeShutdown();
+                   }
+                   if (latch != null) {
+                       latch.countDown();
+                   }
+                   return;
+               }
+               String workUnit = drainIt.next();
+               if (useHandoff && !isPeggedToMe(workUnit)) {
+                   cluster.requestHandoff(workUnit);
+               } else {
+                   cluster.shutdownWork(workUnit, true);
+               }
+               cluster.schedule(this, drainInterval, TimeUnit.MILLISECONDS);
            }
        };
 
        LOG.info("Releasing {} / {} work units over {} seconds: {}",
-               amountToDrain, cluster.myWorkUnits.size(), config.drainTime, toHandOff.mkString(", "));
+               amountToDrain, cluster.myWorkUnits.size(), config.drainTime,
+               Strings.mkstring(toHandOff, ", "));
 
        if (!cluster.myWorkUnits.isEmpty()) {
            cluster.schedule(handoffTask, 0, TimeUnit.SECONDS);
