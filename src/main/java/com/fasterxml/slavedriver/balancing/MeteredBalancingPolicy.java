@@ -9,10 +9,7 @@ import org.apache.zookeeper.CreateMode;
 import com.codahale.metrics.Gauge;
 import com.codahale.metrics.Meter;
 import com.codahale.metrics.MetricRegistry;
-import com.fasterxml.slavedriver.Cluster;
-import com.fasterxml.slavedriver.NodeInfo;
-import com.fasterxml.slavedriver.SimpleListener;
-import com.fasterxml.slavedriver.SmartListener;
+import com.fasterxml.slavedriver.*;
 import com.fasterxml.slavedriver.util.JsonUtil;
 import com.fasterxml.slavedriver.util.Strings;
 import com.fasterxml.slavedriver.util.ZKUtils;
@@ -20,22 +17,11 @@ import com.fasterxml.slavedriver.util.ZKUtils;
 public class MeteredBalancingPolicy
     extends BalancingPolicy
 {
-    protected final Map<String,Meter> meters = new HashMap<String, Meter>();
-//    public val meters = AtomicMap.atomicNBHM[String, Meter];
+    protected final Map<String,Meter> meters = new HashMap<String,Meter>();
 
-    protected final Map<String, Meter> persistentMeterCache = new HashMap<String, Meter>();
-//    public val persistentMeterCache = AtomicMap.atomicNBHM[String, Meter];
+    // Is this really needed?
+    protected final Map<String,Meter> persistentMeterCache = new HashMap<String,Meter>();
 
-//    private final Gauge<Double> loadGauge;
-    /*
-    loadGauge = new Gauge<Double>() {
-        @Override
-        public Double getValue() {
-            return myLoad();
-        }
-    };
-*/
-    
     private ScheduledFuture<?> loadFuture;
 
     private final MetricRegistry metrics;
@@ -49,13 +35,32 @@ public class MeteredBalancingPolicy
                   "the meter as your application performs work!");
         }
         this.metrics = metrics;
+
+        // 17-Oct-2014, tatu: Not 100% this was correct transtalation of the intent; would seem
+        //   like name could use some sort of prefix but...
+        final Gauge<Double> loadGauge = new Gauge<Double>() {
+            @Override
+            public Double getValue() {
+                return myLoad();
+            }
+        };
+        metrics.register("myLoad", loadGauge);
     }
 
     public Meter findOrCreateMetrics(String workUnit)
     {
-        Meter meter = persistentMeterCache.getOrElseUpdate(workUnit,
-                metrics.meter(workUnit, "processing"));
-        meters.put(workUnit, meter);
+        Meter meter;
+        synchronized (persistentMeterCache) {
+            meter = persistentMeterCache.get(workUnit);
+            if (meter == null) {
+                meter = new Meter();
+                metrics.register(workUnit+".processing", meter);
+            }
+        }
+        synchronized (meters) {
+            meters.put(workUnit, meter);
+        }
+        return meter;
     }
     
     /**

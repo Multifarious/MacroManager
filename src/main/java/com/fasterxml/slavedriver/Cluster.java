@@ -97,6 +97,42 @@ public class Cluster
             
     public ZooKeeperClient zk;
 
+    final private Watcher connectionWatcher = new Watcher() {
+        @Override
+        public void process(WatchedEvent event) {
+            final KeeperState ks = event.getState();
+            switch (ks) {
+            case SyncConnected:
+                LOG.info("ZooKeeper session established.");
+                connected.set(true);
+                try {
+                    if (state.get() != NodeState.Shutdown) {
+                        onConnect();
+                    } else {
+                        LOG.info("This node is shut down. ZK connection re-established, but not relaunching.");
+                    }
+                } catch (Exception e) {
+                    LOG.error("Exception during zookeeper connection established callback", e);
+                }
+                break;
+            case Expired:
+                LOG.info("ZooKeeper session expired.");
+                connected.set(false);
+                forceShutdown();
+                awaitReconnect();
+            case Disconnected:
+                LOG.info("ZooKeeper session disconnected. Awaiting reconnect...");
+                connected.set(false);
+                awaitReconnect();
+
+            default: // actually, should only be AuthFaiLed?
+                LOG.info("ZooKeeper session interrupted. Shutting down due to event "+ks);
+                connected.set(false);
+                awaitReconnect();
+            }
+        }
+    };
+    
     public Cluster(String n, SimpleListener l, ClusterConfig config) {
         this(n, l, config, new MetricRegistry());
     }
@@ -275,42 +311,6 @@ public class Cluster
             }
         });
     }
-
-    final private Watcher connectionWatcher = new Watcher() {
-        @Override
-        public void process(WatchedEvent event) {
-            final KeeperState ks = event.getState();
-            switch (ks) {
-            case SyncConnected:
-                LOG.info("ZooKeeper session established.");
-                connected.set(true);
-                try {
-                    if (state.get() != NodeState.Shutdown) {
-                        onConnect();
-                    } else {
-                        LOG.info("This node is shut down. ZK connection re-established, but not relaunching.");
-                    }
-                } catch (Exception e) {
-                    LOG.error("Exception during zookeeper connection established callback", e);
-                }
-                break;
-            case Expired:
-                LOG.info("ZooKeeper session expired.");
-                connected.set(false);
-                forceShutdown();
-                awaitReconnect();
-            case Disconnected:
-                LOG.info("ZooKeeper session disconnected. Awaiting reconnect...");
-                connected.set(false);
-                awaitReconnect();
-
-            default: // actually, should only be AuthFaiLed?
-                LOG.info("ZooKeeper session interrupted. Shutting down due to event "+ks);
-                connected.set(false);
-                awaitReconnect();
-            }
-        }
-    };
 
     void awaitReconnect() {
         while (true) {
