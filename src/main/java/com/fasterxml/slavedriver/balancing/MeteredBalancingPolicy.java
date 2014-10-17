@@ -6,6 +6,7 @@ import java.util.TimerTask;
 import java.util.concurrent.TimeUnit;
 
 import com.fasterxml.slavedriver.Cluster;
+import com.fasterxml.slavedriver.util.Strings;
 
 public class MeteredBalancingPolicy
     extends BalancingPolicy
@@ -50,7 +51,7 @@ public class MeteredBalancingPolicy
             LinkedList<String> unclaimed = new LinkedList<String>(getUnclaimed());
             while (myLoad() <= evenD && !unclaimed.isEmpty()) {
                 final String workUnit = unclaimed.poll();
-                if (config.useSoftHandoff && cluster.handoffRequests.contains(workUnit)
+                if (config.useSoftHandoff && cluster.handoffRequests.containsKey(workUnit)
                         && isFairGame(workUnit) && attemptToClaim(workUnit, claimForHandoff = true)) {
                     LOG.info(String.format(workUnit));
                     cluster.handoffResultsListener.finishHandoff(workUnit)
@@ -104,29 +105,28 @@ public class MeteredBalancingPolicy
      */
     private void scheduleLoadTicks() {
         Runnable sendLoadToZookeeper = new Runnable() {
-                def run() {
-                  try {
+            @Override
+            public void run() {
+                try {
                     meters.foreach { case(workUnit, meter) =>
-                      val loadPath = "/%s/meta/workload/%s".format(cluster.name, workUnit)
-                      ZKUtils.setOrCreate(cluster.zk, loadPath, meter.oneMinuteRate.toString, CreateMode.PERSISTENT)
+                      val loadPath = "/%s/meta/workload/%s".format(cluster.name, workUnit);
+                      ZKUtils.setOrCreate(cluster.zk, loadPath, meter.oneMinuteRate.toString, CreateMode.PERSISTENT);
                     }
 
-                    val myInfo = new NodeInfo(cluster.getState.toString, cluster.zk.get().getSessionId)
-                    val nodeLoadPath = "/%s/nodes/%s".format(cluster.name, cluster.myNodeID)
-                    val myInfoEncoded = JsonUtils.OBJECT_MAPPER.writeValueAsString(myInfo)
-                    ZKUtils.setOrCreate(cluster.zk, nodeLoadPath, myInfoEncoded, CreateMode.EPHEMERAL)
+                    val myInfo = new NodeInfo(cluster.getState.toString, cluster.zk.get().getSessionId);
+                    val nodeLoadPath = "/%s/nodes/%s".format(cluster.name, cluster.myNodeID);
+                    val myInfoEncoded = JsonUtils.OBJECT_MAPPER.writeValueAsString(myInfo);
+                    ZKUtils.setOrCreate(cluster.zk, nodeLoadPath, myInfoEncoded, CreateMode.EPHEMERAL);
 
-                    LOG.info("My load: %s".format(myLoad()))
-                  } catch {
-                    case e: Exception => log.error("Error reporting load info to ZooKeeper.", e)
-                  }
+                    LOG.info("My load: {}", myLoad());
+                } catch (Exception e) {
+                    LOG.error("Error reporting load info to ZooKeeper.", e)
                 }
-              }
-
-              loadFuture = Some(cluster.scheduleAtFixedRate(
-                sendLoadToZookeeper, 0, 1, TimeUnit.MINUTES))
             }
+        };
 
+        loadFuture = cluster.scheduleAtFixedRate(sendLoadToZookeeper, 0, 1, TimeUnit.MINUTES));
+    }
 
     /**
      * Drains excess load on this node down to a fraction distributed across the cluster.
@@ -160,35 +160,36 @@ public class MeteredBalancingPolicy
         }
     }
 
-    TimerTask buildDrainTask(final LinkedList<String> drainList, final int drainInterval, final boolean useHandoff,
-            final double currentLoad)
+    TimerTask buildDrainTask(final LinkedList<String> drainList, final int drainInterval,
+            final boolean useHandoff, final double currentLoad)
     {
         return new TimerTask() {
             @Override
             public void run() {
                   if (drainList.isEmpty() || myLoad() <= evenDistribution) {
                     LOG.info("Finished the drain list, or my load is now less than an even distribution. " +
-                      "Stopping rebalance. Remaining work units: %s".format(drainList.mkString(", ")))
+                      "Stopping rebalance. Remaining work units: {}",
+                      Strings.mkstring(drainList, ", "));
                     return;
                   } else if (useHandoff) {
                     cluster.requestHandoff(drainList.poll());
                   } else {
-                    cluster.shutdownWork(drainList.poll());
+                    cluster.shutdownWork(drainList.poll(), true);
                   }
-                  cluster.schedule(this, drainInterval, TimeUnit.MILLISECONDS)
+                  cluster.schedule(this, drainInterval, TimeUnit.MILLISECONDS);
             }
-        }
+        };
     }
 
     @Override
     public void onConnect() {
-        scheduleLoadTicks()
+        scheduleLoadTicks();
     }
 
     @Override
     public void shutdown() {
-        if (loadFuture.isDefined) {
-            loadFuture.get.cancel(true);
+        if (loadFuture != null) {
+            loadFuture.cancel(true);
         }
     }
 

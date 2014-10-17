@@ -12,7 +12,7 @@ import com.fasterxml.slavedriver.Cluster;
 import com.fasterxml.slavedriver.ClusterConfig;
 import com.fasterxml.slavedriver.NodeInfo;
 import com.fasterxml.slavedriver.NodeState;
-import com.fasterxml.slavedriver.ZKUtils;
+import com.fasterxml.slavedriver.util.ZKUtils;
 import com.twitter.common.zookeeper.ZooKeeperMap;
 
 public class HandoffResultsListener

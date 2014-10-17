@@ -1,4 +1,4 @@
-package com.fasterxml.slavedriver;
+package com.fasterxml.slavedriver.util;
 
 import java.nio.charset.Charset;
 import java.util.ArrayList;
@@ -40,17 +40,17 @@ public class ZKUtils
     }
 
     public static boolean createEphemeral(ZooKeeperClient zk, String path)
-            throws KeeperException, InterruptedException, ZooKeeperConnectionException {
+            throws InterruptedException {
         return createEphemeral(zk, path, NO_BYTES);
     }
 
     public static boolean createEphemeral(ZooKeeperClient zk, String path, String value)
-        throws KeeperException, InterruptedException, ZooKeeperConnectionException {
+        throws InterruptedException {
         return createEphemeral(zk, path, utf8BytesFrom(value));
     }
 
     public static boolean createEphemeral(ZooKeeperClient zk, String path, byte[] value)
-            throws KeeperException, InterruptedException, ZooKeeperConnectionException
+            throws InterruptedException
     {
         if (value == null) {
             value = NO_BYTES;
@@ -58,8 +58,13 @@ public class ZKUtils
         try {
             zk.get().create(path, value, Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
             return true;
+            
         } catch (NodeExistsException e) {
             return false;
+        } catch (KeeperException e) {
+            throw ZKException.from(e);
+        } catch (ZooKeeperConnectionException e) {
+            throw ZKException.from(e);
         }
     }
         
@@ -118,14 +123,14 @@ public class ZKUtils
 
     public static void setOrCreate(ZooKeeperClient zk, String path,
             String data, CreateMode mode)
-                    throws KeeperException, InterruptedException, ZooKeeperConnectionException
+                    throws InterruptedException
     {
         setOrCreate(zk, path, utf8BytesFrom(data), mode);
     }
 
     public static void setOrCreate(ZooKeeperClient zk, String path,
             byte[] data, CreateMode mode)
-                    throws KeeperException, InterruptedException, ZooKeeperConnectionException
+        throws InterruptedException
     {
         if (mode == null) {
             mode = CreateMode.EPHEMERAL;
@@ -135,8 +140,18 @@ public class ZKUtils
         }
         try {
             zk.get().setData(path, data, -1);
-        } catch (NoNodeException e) {
-            zk.get().create(path, data, Ids.OPEN_ACL_UNSAFE, mode);
+        } catch (NoNodeException e0) {
+            try {
+                zk.get().create(path, data, Ids.OPEN_ACL_UNSAFE, mode);
+            } catch (KeeperException e) {
+                throw ZKException.from(e);
+            } catch (ZooKeeperConnectionException e) {
+                throw ZKException.from(e);
+            }
+        } catch (KeeperException e) {
+            throw ZKException.from(e);
+        } catch (ZooKeeperConnectionException e) {
+            throw ZKException.from(e);
         }
     }
 

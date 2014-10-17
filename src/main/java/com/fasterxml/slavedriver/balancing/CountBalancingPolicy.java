@@ -3,7 +3,6 @@ package com.fasterxml.slavedriver.balancing;
 import java.util.Set;
 
 import com.fasterxml.slavedriver.Cluster;
-import com.fasterxml.slavedriver.ClusterConfig;
 import com.fasterxml.slavedriver.util.Strings;
 
 /**
@@ -26,14 +25,14 @@ public class CountBalancingPolicy
      * amount is in addition to any work units which are pegged to this node.
      */
     @Override
-    public void claimWork() {
+    public void claimWork() throws InterruptedException {
         int claimed = cluster.myWorkUnits.size();
         int nodeCount = activeNodeSize();
 
         synchronized (cluster.allWorkUnits) {
             final int maxToClaim = getMaxToClaim(nodeCount);
 
-            LOG.debug("{} Nodes: {}. {}: {}.", cluster.name, nodeCount, config.workUnitName, cluster.allWorkUnits.size()));
+            LOG.debug("{} Nodes: {}. {}: {}.", cluster.name, nodeCount, config.workUnitName, cluster.allWorkUnits.size());
             LOG.debug("Claiming {} pegged to me, and up to {} more.", config.workUnitName, maxToClaim);
 
             Set<String> unclaimed = getUnclaimed();
@@ -44,11 +43,12 @@ public class CountBalancingPolicy
 
             for (String workUnit : unclaimed) {
                  if ((isFairGame(workUnit) && claimed < maxToClaim) || isPeggedToMe(workUnit)) {
-                   if (config.useSoftHandoff && cluster.handoffRequests.contains(workUnit) && attemptToClaim(workUnit, true)) {
+                   if (config.useSoftHandoff && cluster.handoffRequests.containsKey(workUnit)
+                           && attemptToClaim(workUnit, true)) {
                        LOG.info("Accepted handoff of {}.", workUnit);
                        cluster.handoffResultsListener.finishHandoff(workUnit);
                        claimed += 1;
-                   } else if (!cluster.handoffRequests.contains(workUnit) && attemptToClaim(workUnit)) {
+                   } else if (!cluster.handoffRequests.containsKey(workUnit) && attemptToClaim(workUnit)) {
                        claimed += 1;
                    }
                  }

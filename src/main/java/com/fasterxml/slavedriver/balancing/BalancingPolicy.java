@@ -1,13 +1,6 @@
 package com.fasterxml.slavedriver.balancing;
 
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.LinkedHashSet;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.TimerTask;
+import java.util.*;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
@@ -21,8 +14,8 @@ import com.fasterxml.slavedriver.Cluster;
 import com.fasterxml.slavedriver.ClusterConfig;
 import com.fasterxml.slavedriver.NodeInfo;
 import com.fasterxml.slavedriver.NodeState;
-import com.fasterxml.slavedriver.ZKUtils;
 import com.fasterxml.slavedriver.util.Strings;
+import com.fasterxml.slavedriver.util.ZKUtils;
 import com.twitter.common.zookeeper.ZooKeeperClient.ZooKeeperConnectionException;
 
 public abstract class BalancingPolicy
@@ -37,8 +30,8 @@ public abstract class BalancingPolicy
         config = c.getConfig();
     }        
 
-    public abstract void claimWork();
-    public abstract void rebalance();
+    public abstract void claimWork() throws InterruptedException;
+    public abstract void rebalance() throws InterruptedException;
 
     // Implementation optional
     public BalancingPolicy init() { return this; }
@@ -126,7 +119,7 @@ public abstract class BalancingPolicy
    }
 
    boolean attemptToClaim(String workUnit)
-           throws InterruptedException, KeeperException, ZooKeeperConnectionException {
+           throws InterruptedException {
        return attemptToClaim(workUnit, false);
    }
    
@@ -137,7 +130,7 @@ public abstract class BalancingPolicy
  * @throws KeeperException 
     */
    boolean attemptToClaim(String workUnit, boolean claimForHandoff)
-       throws InterruptedException, KeeperException, ZooKeeperConnectionException
+       throws InterruptedException
    {
        LOG.debug("Attempting to claim {}. For handoff? {}", workUnit, claimForHandoff);
 
@@ -166,7 +159,7 @@ public abstract class BalancingPolicy
     * (i.e., deleted by the node which previously owned it).
     */
    protected void claimWorkPeggedToMe(String workUnit)
-       throws InterruptedException, KeeperException, ZooKeeperConnectionException {
+       throws InterruptedException {
        String path = cluster.workUnitClaimPath(workUnit);
 
        while (true) {
@@ -180,7 +173,11 @@ public abstract class BalancingPolicy
    }
 
    protected void drainToCount(int targetCount) {
-       drainToCount(targetCount, false, config.useSoftHandoff, null);
+       drainToCount(targetCount, false);
+   }
+
+   protected void drainToCount(int targetCount, boolean doShutdown) {
+       drainToCount(targetCount, doShutdown, config.useSoftHandoff, null);
    }
    
    /**

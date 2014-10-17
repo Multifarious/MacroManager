@@ -22,6 +22,7 @@ import com.fasterxml.slavedriver.listeners.VerifyIntegrityListener;
 import com.fasterxml.slavedriver.util.JsonUtil;
 import com.fasterxml.slavedriver.util.NamedThreadFactory;
 import com.fasterxml.slavedriver.util.Strings;
+import com.fasterxml.slavedriver.util.ZKUtils;
 import com.twitter.common.quantity.Time;
 import com.twitter.common.quantity.Amount;
 import com.twitter.common.zookeeper.ZooKeeperClient;
@@ -297,7 +298,7 @@ public class Cluster
               val host = server.split(":")(0)
               val port = Integer.parseInt(server.split(":")(1))
               new InetSocketAddress(host, port)
-            }.toList;
+            }.toList();
     
             claimer.start();
             LOG.info("Connecting to hosts: {}", hosts.toString());
@@ -321,8 +322,8 @@ public class Cluster
             return;
         }
         balancingPolicy.shutdown();
-        if (autoRebalanceFuture.isDefined()) {
-            autoRebalanceFuture.get().cancel(true);
+        if (autoRebalanceFuture != null) {
+            autoRebalanceFuture.cancel(true);
         }
         LOG.info("Shutdown initiated; beginning drain...");
         setState(NodeState.Draining);
