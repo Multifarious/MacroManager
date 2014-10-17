@@ -67,7 +67,7 @@ public class Cluster
     public Map<String,String> handoffRequests;
     public Map<String,String> handoffResults;
     public Set<String> claimedForHandoff = new NonBlockingHashSet<String>();
-    public Map<String,Double> loadMap = Collections.emptyMap();
+    private Map<String,Double> loadMap = Collections.emptyMap();
     public Set<String> workUnitsPeggedToMe = new NonBlockingHashSet<String>();
     final private Claimer claimer;
 
@@ -174,6 +174,32 @@ public class Cluster
 
     public boolean hasState(NodeState s) {
         return state.get() == s;
+    }
+
+    public double getWorkUnitLoad(String workUnit) {
+        if (loadMap != null) {
+            synchronized (loadMap) {
+                Double d = loadMap.get(workUnit);
+                if (d != null) {
+                    return d.doubleValue();
+                }
+            }
+        }
+        return 0.0;
+    }
+
+    public double getTotalWorkUnitLoad() {
+        if (loadMap != null) {
+            synchronized (loadMap) {
+                double total = 0.0;
+                for (Double d : loadMap.values()) {
+                    if (d != null) {
+                        total += d.doubleValue();
+                    }
+                }
+            }
+        }
+        return 0.0;
     }
     
     // // // Access to helper objects
@@ -332,12 +358,11 @@ public class Cluster
 
     private void forceShutdown() {
         balancingPolicy.shutdown();
-        if (autoRebalanceFuture.isDefined()) {
-            autoRebalanceFuture.get().cancel(true);
+        if (autoRebalanceFuture != null) {
+            autoRebalanceFuture.cancel(true);
         }
         LOG.warn("Forcible shutdown initiated due to connection loss...");
-        myWorkUnits.map(w => shutdownWork(w));
-        myWorkUnits.clear();
+        shutdownAllWorkUnits();
         listener.onLeave();
     }
 
@@ -345,24 +370,23 @@ public class Cluster
      * Finalizes the shutdown sequence. Called once the drain operation completes.
      */
     public void completeShutdown() {
-      setState(NodeState.Shutdown);
-      myWorkUnits.map(w => shutdownWork(w))
-      myWorkUnits.clear();
-      deleteFromZk();
-      if (claimer != null) {
-        claimer.interrupt();
-        claimer.join();
-      }
-      // The connection watcher will attempt to reconnect - unregister it
-      if (connectionWatcher != null) {
-        zk.unregister(connectionWatcher);
-      }
-      try {
-        zk.close();
-      } catch (Exception e) {
-          LOG.warn("Zookeeper reported exception on shutdown.", e);
-      }
-      listener.onLeave();
+        setState(NodeState.Shutdown);
+        shutdownAllWorkUnits();
+        deleteFromZk();
+        if (claimer != null) {
+            claimer.interrupt();
+            claimer.join();
+        }
+        // The connection watcher will attempt to reconnect - unregister it
+        if (connectionWatcher != null) {
+            zk.unregister(connectionWatcher);
+        }
+        try {
+            zk.close();
+        } catch (Exception e) {
+            LOG.warn("Zookeeper reported exception on shutdown.", e);
+        }
+        listener.onLeave();
     }
 
     /**
@@ -376,36 +400,32 @@ public class Cluster
      * Primary callback which is triggered upon successful Zookeeper connection.
      */
     private void onConnect() {
-      if (state.get() != NodeState.Fresh) {
-        if (previousZKSessionStillActive()) {
-            LOG.info("ZooKeeper session re-established before timeout.");
-          return;
+        if (state.get() != NodeState.Fresh) {
+            if (previousZKSessionStillActive()) {
+                LOG.info("ZooKeeper session re-established before timeout.");
+                return;
+            }
+            LOG.warn("Rejoined after session timeout. Forcing shutdown and clean startup.");
+            ensureCleanStartup();
         }
-        LOG.warn("Rejoined after session timeout. Forcing shutdown and clean startup.");
-        ensureCleanStartup();
-      }
 
-      LOG.info("Connected to Zookeeper (ID: {}).", myNodeID);
-      ZKUtils.ensureOrdasityPaths(zk, name, config.workUnitName, config.workUnitShortName);
+        LOG.info("Connected to Zookeeper (ID: {}).", myNodeID);
+        ZKUtils.ensureOrdasityPaths(zk, name, config.workUnitName, config.workUnitShortName);
+        joinCluster();
+        listener.onJoin(zk);
+        if (watchesRegistered.compareAndSet(false, true)) {
+            registerWatchers();
+        }
+        initialized.set(true);
+        initializedLatch.countDown();
+        setState(NodeState.Started);
+        claimer.requestClaim();
+        verifyIntegrity();
 
-      joinCluster();
-
-      listener.onJoin(zk);
-
-      if (watchesRegistered.compareAndSet(false, true)) {
-        registerWatchers();
-      }
-      initialized.set(true);
-      initializedLatch.countDown();
-      
-      setState(NodeState.Started);
-      claimer.requestClaim();
-      verifyIntegrity();
-
-      balancingPolicy.onConnect();
-      if (config.enableAutoRebalance) {
-          scheduleRebalancing();
-      }
+        balancingPolicy.onConnect();
+        if (config.enableAutoRebalance) {
+            scheduleRebalancing();
+        }
     }
 
     /**
@@ -416,13 +436,11 @@ public class Cluster
         forceShutdown();
         ScheduledThreadPoolExecutor oldPool = pool.getAndSet(createScheduledThreadExecutor());
         oldPool.shutdownNow();
-        myWorkUnits.map(w => shutdownWork(w));
-        myWorkUnits.clear();
         claimedForHandoff.clear();
         workUnitsPeggedToMe.clear();
         state.set(NodeState.Fresh);
     }
-
+    
     /**
      * Schedules auto-rebalancing if auto-rebalancing is enabled. The task is
      * scheduled to run every 60 seconds by default, or according to the config.
@@ -472,15 +490,15 @@ public class Cluster
     private void registerWatchers()
     {
         ClusterNodesChangedListener nodesChangedListener = new ClusterNodesChangedListener(this);
-        VerifyIntegrityListenerr<String> verifyIntegrityListener =
-                new VerifyIntegrityListener<String>(this, config);
+        VerifyIntegrityListener<String> verifyIntegrityListener =
+                new VerifyIntegrityListener<String>(this);
         StringDeserializer stringDeser = new StringDeserializer();
 
         nodes = ZooKeeperMap.create(zk, String.format("/%s/nodes", name),
                 new NodeInfoDeserializer(), nodesChangedListener);
 
         allWorkUnits = ZooKeeperMap.create(zk, String.format("/%s", config.workUnitName),
-                new ObjectNodeDeserializer, new VerifyIntegrityListener<ObjectNode>(this, config));
+                new ObjectNodeDeserializer, new VerifyIntegrityListener<ObjectNode>(this));
 
         workUnitMap = ZooKeeperMap.create(zk, String.format("/%s/claimed-%s", name, config.workUnitShortName),
                 stringDeser, verifyIntegrityListener);
@@ -535,17 +553,18 @@ public class Cluster
     public void verifyIntegrity()
     {
         val noLongerActive = myWorkUnits -- allWorkUnits.keys.toSet;
-        for (workUnit <- noLongerActive) {
-            shutdownWork(workUnit);
+        
+        for (String workUnit : noLongerActive) {
+            shutdownWork(workUnit, true);
         }
 
         // Check the status of pegged work units to ensure that this node is not serving
         // a work unit that is pegged to another node in the cluster.
         myWorkUnits.map { workUnit =>
-        val claimPath = workUnitClaimPath(workUnit)
+        val claimPath = workUnitClaimPath(workUnit);
         if (!balancingPolicy.isFairGame(workUnit) && !balancingPolicy.isPeggedToMe(workUnit)) {
           LOG.info("Discovered I'm serving a work unit that's now " +
-            "pegged to someone else. Shutting down %s".format(workUnit))
+            "pegged to someone else. Shutting down {}", workUnit));
           shutdownWork(workUnit);
 
         } else if (workUnitMap.contains(workUnit) && !workUnitMap.get(workUnit).equals(myNodeID) &&
@@ -645,5 +664,12 @@ public class Cluster
             LOG.error("Encountered unexpected error in checking ZK session status.", e);
         }
         return false;
+    }
+
+    private void shutdownAllWorkUnits() {
+        for (String workUnit : myWorkUnits) {
+            shutdownWork(workUnit, true);
+        }
+        myWorkUnits.clear();
     }
 }

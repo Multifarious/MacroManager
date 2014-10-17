@@ -1,5 +1,6 @@
 package com.fasterxml.slavedriver.balancing;
 
+import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.TimerTask;
@@ -33,12 +34,12 @@ public class MeteredBalancingPolicy
             */
 
     /**
-     * Begins by claimng all work units that are pegged to this node.
+     * Begins by claiming all work units that are pegged to this node.
      * Then, continues to claim work from the available pool until we've claimed
      * equal to or slightly more than the total desired load.
      */
     @Override
-    public void claimWork()
+    public void claimWork() throws InterruptedException
     {
         synchronized (cluster.allWorkUnits) {
             for (String workUnit : getUnclaimed()) {
@@ -52,9 +53,9 @@ public class MeteredBalancingPolicy
             while (myLoad() <= evenD && !unclaimed.isEmpty()) {
                 final String workUnit = unclaimed.poll();
                 if (config.useSoftHandoff && cluster.handoffRequests.containsKey(workUnit)
-                        && isFairGame(workUnit) && attemptToClaim(workUnit, claimForHandoff = true)) {
+                        && isFairGame(workUnit) && attemptToClaim(workUnit, true)) {
                     LOG.info(String.format(workUnit));
-                    cluster.handoffResultsListener.finishHandoff(workUnit)
+                    cluster.handoffResultsListener.finishHandoff(workUnit);
                 } else if (isFairGame(workUnit)) {
                     attemptToClaim(workUnit);
                 }
@@ -72,7 +73,7 @@ public class MeteredBalancingPolicy
         final double myLoad = myLoad();
         if (myLoad > target) {
             LOG.info("Smart Rebalance triggered. Load: %s. Target: %s", myLoad, target);
-            drainToLoad(target.longValue);
+            drainToLoad((long) target);
         }
     }
 
@@ -81,7 +82,7 @@ public class MeteredBalancingPolicy
      * the cluster. This is determined by the total load divided by the number of alive nodes.
      */
     public double evenDistribution() {
-        return (double) cluster.loadMap.values().sum / (double) activeNodeSize();
+        return cluster.getTotalWorkUnitLoad() / (double) activeNodeSize();
     }
 
     /**
@@ -95,7 +96,12 @@ public class MeteredBalancingPolicy
         LOG.debug(cluster.loadMap.toString);
         LOG.debug(cluster.myWorkUnits.toString);
         */
-        cluster.myWorkUnits.foreach(u => load += cluster.getOrElse(cluster.loadMap, u, 0));
+        for (String wu : cluster.myWorkUnits) {
+            Double d = cluster.getWorkUnitLoad(wu);
+            if (d != null) {
+                load += d.doubleValue();
+            }
+        }
         return load;
     }
 
@@ -128,21 +134,26 @@ public class MeteredBalancingPolicy
         loadFuture = cluster.scheduleAtFixedRate(sendLoadToZookeeper, 0, 1, TimeUnit.MINUTES));
     }
 
+    protected void drainToLoad(long targetLoad) {
+        drainToLoad(targetLoad, config.drainTime, config.useSoftHandoff);
+    }
+    
     /**
      * Drains excess load on this node down to a fraction distributed across the cluster.
      * The target load is set to (clusterLoad / # nodes).
      */
-    void drainToLoad(long targetLoad, time: Int = config.drainTime,
-            useHandoff: Boolean = config.useSoftHandoff)
+    protected void drainToLoad(long targetLoad, int time, boolean useHandoff)
     {
         final double startingLoad = myLoad();
         double currentLoad = startingLoad;
         List<String> drainList = new LinkedList<String>();
-        val eligibleToDrop = new LinkedList[String](cluster.myWorkUnits -- cluster.workUnitsPeggedToMe);
+        List<String> eligibleToDrop = new LinkedList<String>(cluster.myWorkUnits -- cluster.workUnitsPeggedToMe);
 
-        while (currentLoad > targetLoad && !eligibleToDrop.isEmpty) {
-            val workUnit = eligibleToDrop.poll();
-            var workUnitLoad : Double = cluster.getOrElse(cluster.loadMap, workUnit, 0);
+        for (String workUnit : eligibleToDrop) {
+            if (currentLoad <= targetLoad) {
+                break;
+            }
+            double workUnitLoad = cluster.getWorkUnitLoad(workUnit);
 
             if (workUnitLoad > 0 && (currentLoad - workUnitLoad) > targetLoad) {
                 drainList.add(workUnit);
@@ -150,31 +161,34 @@ public class MeteredBalancingPolicy
             }
         }
 
-        val drainInterval = ((config.drainTime.toDouble / drainList.size) * 1000).intValue();
-        val drainTask = buildDrainTask(drainList, drainInterval, useHandoff, currentLoad);
+        int drainInterval = (int) (((double) config.drainTime / drainList.size()) * 1000);
+        TimerTask drainTask = buildDrainTask(drainList, drainInterval, useHandoff, currentLoad);
 
-        if (!drainList.isEmpty) {
+        if (!drainList.isEmpty()) {
             LOG.info("Releasing work units over {} seconds. Current load: {}. Target: {}. Releasing: {}",
-                    time, startingLoad, targetLoad, drainList.mkString(", "));
-            cluster.schedule(drainTask, 0, TimeUnit.SECONDS)
+                    time, startingLoad, targetLoad, Strings.mkstring(drainList, ", "));
+            cluster.schedule(drainTask, 0, TimeUnit.SECONDS);
         }
     }
 
-    TimerTask buildDrainTask(final LinkedList<String> drainList, final int drainInterval,
+    TimerTask buildDrainTask(final List<String> drainList, final int drainInterval,
             final boolean useHandoff, final double currentLoad)
     {
+        final Iterator<String> it = drainList.iterator();
         return new TimerTask() {
             @Override
             public void run() {
-                  if (drainList.isEmpty() || myLoad() <= evenDistribution) {
-                    LOG.info("Finished the drain list, or my load is now less than an even distribution. " +
-                      "Stopping rebalance. Remaining work units: {}",
-                      Strings.mkstring(drainList, ", "));
+                  if (!it.hasNext() || myLoad() <= evenDistribution()) {
+                      LOG.info("Finished the drain list, or my load is now less than an even distribution. " +
+                              "Stopping rebalance. Remaining work units: {}",
+                              Strings.mkstring(drainList, ", "));
                     return;
-                  } else if (useHandoff) {
-                    cluster.requestHandoff(drainList.poll());
+                  }
+                  String workUnit = it.next();
+                  if (useHandoff) {
+                      cluster.requestHandoff(workUnit);
                   } else {
-                    cluster.shutdownWork(drainList.poll(), true);
+                      cluster.shutdownWork(workUnit, true);
                   }
                   cluster.schedule(this, drainInterval, TimeUnit.MILLISECONDS);
             }

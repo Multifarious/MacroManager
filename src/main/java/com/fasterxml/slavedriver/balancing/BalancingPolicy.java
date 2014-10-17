@@ -176,7 +176,7 @@ public abstract class BalancingPolicy
        drainToCount(targetCount, false);
    }
 
-   protected void drainToCount(int targetCount, boolean doShutdown) {
+   public void drainToCount(int targetCount, boolean doShutdown) {
        drainToCount(targetCount, doShutdown, config.useSoftHandoff, null);
    }
    
