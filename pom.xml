@@ -88,6 +88,11 @@ Experimental Java port of Ordasity scheduling library
             <artifactId>metrics-core</artifactId>
             <version>3.0.2</version>
         </dependency>
+        <dependency>
+            <groupId>com.boundary</groupId>
+            <artifactId>high-scale-lib</artifactId>
+            <version>1.0.6</version>
+        </dependency>
 
         <dependency>
             <groupId>org.apache.zookeeper</groupId>

@@ -19,7 +19,7 @@ public class MeteredBalancingPolicy
     public val meters = AtomicMap.atomicNBHM[String, Meter];
     public val persistentMeterCache = AtomicMap.atomicNBHM[String, Meter];
     private Gauge<Double> loadGauge = metrics.<Double>gauge("my_load") { myLoad() };
-    private ScheduledFuture loadFuture;
+    private ScheduledFuture<?> loadFuture;
 
     public MeteredBalancingPolicy(Cluster c, SimpleListener listener) {
         super(c);
@@ -114,7 +114,6 @@ public class MeteredBalancingPolicy
                     meters.foreach { case(workUnit, meter) =>
                       val loadPath = "/%s/meta/workload/%s".format(cluster.name, workUnit);
                       ZKUtils.setOrCreate(cluster.zk, loadPath, meter.oneMinuteRate.toString, CreateMode.PERSISTENT);
-                    }
 
                     val myInfo = new NodeInfo(cluster.getState.toString, cluster.zk.get().getSessionId);
                     val nodeLoadPath = "/%s/nodes/%s".format(cluster.name, cluster.myNodeID);
@@ -123,12 +122,12 @@ public class MeteredBalancingPolicy
 
                     LOG.info("My load: {}", myLoad());
                 } catch (Exception e) {
-                    LOG.error("Error reporting load info to ZooKeeper.", e)
+                    LOG.error("Error reporting load info to ZooKeeper.", e);
                 }
             }
         };
 
-        loadFuture = cluster.scheduleAtFixedRate(sendLoadToZookeeper, 0, 1, TimeUnit.MINUTES));
+        loadFuture = cluster.scheduleAtFixedRate(sendLoadToZookeeper, 0, 1, TimeUnit.MINUTES);
     }
 
     protected void drainToLoad(long targetLoad) {

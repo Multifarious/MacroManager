@@ -5,6 +5,7 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.io.IOException;
 import java.lang.management.ManagementFactory;
 
 import javax.management.ObjectName;
@@ -22,16 +23,19 @@ import com.fasterxml.slavedriver.listeners.VerifyIntegrityListener;
 import com.fasterxml.slavedriver.util.JsonUtil;
 import com.fasterxml.slavedriver.util.NamedThreadFactory;
 import com.fasterxml.slavedriver.util.Strings;
+import com.fasterxml.slavedriver.util.ZKException;
 import com.fasterxml.slavedriver.util.ZKUtils;
 import com.twitter.common.quantity.Time;
 import com.twitter.common.quantity.Amount;
 import com.twitter.common.zookeeper.ZooKeeperClient;
+import com.twitter.common.zookeeper.ZooKeeperClient.ZooKeeperConnectionException;
 import com.twitter.common.zookeeper.ZooKeeperMap;
 
 import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.KeeperException.NoNodeException;
 import org.apache.zookeeper.Watcher;
 import org.apache.zookeeper.Watcher.Event.KeeperState;
+import org.cliffc.high_scale_lib.NonBlockingHashSet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,7 +43,7 @@ public class Cluster
     implements ClusterMBean
     //with Instrumented
 {
-    final private Logger LOG = LoggerFactory.getLogger(getClass());
+    final protected Logger LOG = LoggerFactory.getLogger(getClass());
 
     // Register with JMX for management / instrumentation.
     /*
@@ -57,7 +61,7 @@ public class Cluster
     final private AtomicBoolean watchesRegistered = new AtomicBoolean(false);
     final private AtomicBoolean initialized = new AtomicBoolean(false);
     final private CountDownLatch initializedLatch = new CountDownLatch(1);
-    final private AtomicBoolean connected = new AtomicBoolean(false);
+    final AtomicBoolean connected = new AtomicBoolean(false);
 
     // Cluster, node, and work unit state
     public Map<String,NodeInfo> nodes;
@@ -130,7 +134,7 @@ public class Cluster
         connStateGauge = new Gauge<String>() {
             @Override
             public String getValue() {
-                return connected.get() ? "true" : "false";
+                return isConnected() ? "true" : "false";
             };
         };
         metrics.register("zk_connection_state", connStateGauge);
@@ -154,6 +158,10 @@ public class Cluster
         return initialized.get();
     }
 
+    public boolean isConnected() {
+        return connected.get();
+    }
+    
     public boolean isMe(String other) {
         return myNodeID.equals(other);
     }
@@ -197,6 +205,7 @@ public class Cluster
                         total += d.doubleValue();
                     }
                 }
+                return total;
             }
         }
         return 0.0;
@@ -218,14 +227,14 @@ public class Cluster
      * Joins the cluster, claims work, and begins operation.
      */
     @Override
-    public String join() {
+    public String join() throws InterruptedException {
         return join(null);
     }
 
     /**
      * Joins the cluster using a custom zk client, claims work, and begins operation.
      */
-    public String join(ZooKeeperClient injectedClient)
+    public String join(ZooKeeperClient injectedClient) throws InterruptedException
     {
         switch (state.get()) {
         case Fresh:
@@ -301,7 +310,7 @@ public class Cluster
         }
     };
 
-    private void awaitReconnect() {
+    void awaitReconnect() {
         while (true) {
           try {
               LOG.info("Awaiting reconnection to ZooKeeper...");
@@ -318,7 +327,7 @@ public class Cluster
      * Directs the ZooKeeperClient to connect to the ZooKeeper ensemble and wait for
      * the connection to be established before continuing.
      */
-    private void connect(ZooKeeperClient injectedClient) {
+    private void connect(ZooKeeperClient injectedClient) throws InterruptedException {
         if (!initialized.get()) {
             if (injectedClient == null) {
                 List<InetSocketAddress> hosts = new ArrayList<InetSocketAddress>();
@@ -339,7 +348,12 @@ public class Cluster
             LOG.info("Registering connection watcher.");
             zk.register(connectionWatcher);
         }
-        zk.get();
+        // and then see that we can actually get the client without problems
+        try {
+            zk.get();
+        } catch (ZooKeeperConnectionException e) {
+            throw ZKException.from(e);
+        }
     }
 
     /**
@@ -360,7 +374,7 @@ public class Cluster
         balancingPolicy.drainToCount(0, true);
     }
 
-    private void forceShutdown() {
+    void forceShutdown() {
         balancingPolicy.shutdown();
         if (autoRebalanceFuture != null) {
             autoRebalanceFuture.cancel(true);
@@ -379,7 +393,11 @@ public class Cluster
         deleteFromZk();
         if (claimer != null) {
             claimer.interrupt();
-            claimer.join();
+                try {
+                    claimer.join();
+                } catch (InterruptedException e) {
+                    LOG.warn("Shutdown of Claimer interrupted");
+                }
         }
         // The connection watcher will attempt to reconnect - unregister it
         if (connectionWatcher != null) {
@@ -403,7 +421,8 @@ public class Cluster
     /**
      * Primary callback which is triggered upon successful Zookeeper connection.
      */
-    private void onConnect() {
+    void onConnect() throws InterruptedException, IOException
+    {
         if (state.get() != NodeState.Fresh) {
             if (previousZKSessionStillActive()) {
                 LOG.info("ZooKeeper session re-established before timeout.");
@@ -471,17 +490,22 @@ public class Cluster
      * This retry logic is important in that a node which restarts before Zookeeper
      * detects the previous disconnect could prohibit the node from properly launching.
      */
-    private void joinCluster() {
-      while (true) {
-          NodeInfo myInfo = new NodeInfo(NodeState.Fresh.toString(), zk.get().getSessionId());
-          byte[] encoded = JsonUtil.asJSONBytes(myInfo);
-          if (ZKUtils.createEphemeral(zk, "/" + name + "/nodes/" + myNodeID, encoded)) {
-              return;
-          }
-          LOG.warn("Unable to register with Zookeeper on launch. " +
-                  "Is {} already running on this host? Retrying in 1 second...", name);
-          Thread.sleep(1000);
-      }
+    private void joinCluster() throws InterruptedException, IOException {
+        while (true) {
+            NodeInfo myInfo;
+            try {
+                myInfo = new NodeInfo(NodeState.Fresh.toString(), zk.get().getSessionId());
+            } catch (ZooKeeperConnectionException e) {
+                throw ZKException.from(e);
+            }
+            byte[] encoded = JsonUtil.asJSONBytes(myInfo);
+            if (ZKUtils.createEphemeral(zk, "/" + name + "/nodes/" + myNodeID, encoded)) {
+                return;
+            }
+            LOG.warn("Unable to register with Zookeeper on launch. " +
+                    "Is {} already running on this host? Retrying in 1 second...", name);
+            Thread.sleep(1000);
+        }
     }
 
     /**
@@ -531,7 +555,7 @@ public class Cluster
      * Triggers a work-claiming cycle. If smart balancing is enabled, claim work based
      * on node and cluster load. If simple balancing is in effect, claim by count.
      */
-    public void claimWork() {
+    public void claimWork() throws InterruptedException {
         if (state.get() == NodeState.Started && connected.get()) {
             balancingPolicy.claimWork();
         }
@@ -545,7 +569,7 @@ public class Cluster
       * Requests that another node take over for a work unit by creating a ZNode
       * at handoff-requests. This will trigger a claim cycle and adoption.
      */
-    public void requestHandoff(String workUnit) {
+    public void requestHandoff(String workUnit) throws InterruptedException {
         LOG.info("Requesting handoff for {}.", workUnit);
         ZKUtils.createEphemeral(zk, "/" + name + "/handoff-requests/" + workUnit);
     }
@@ -591,7 +615,7 @@ public class Cluster
      * Otherwise, just call "startWork" on the listener and let the client have at it.
      * TODO: Refactor to remove check and cast.
      */
-    public void startWork(String workUnit) {
+    public void startWork(String workUnit) throws InterruptedException {
         LOG.info("Successfully claimed {}: {}. Starting...", config.workUnitName, workUnit);
         final boolean added = myWorkUnits.add(workUnit);
 
@@ -613,7 +637,7 @@ public class Cluster
     /**
      * Shuts down a work unit by removing the claim in ZK and calling the listener.
      */
-    public boolean shutdownWork(String workUnit, boolean doLog /*true*/ ) {
+    public void shutdownWork(String workUnit, boolean doLog /*true*/ ) {
         if (doLog) {
             LOG.info("Shutting down {}: {}...", config.workUnitName, workUnit);
         }
@@ -635,7 +659,7 @@ public class Cluster
      * the target load is set to (# of work items / node count).
      */
     @Override
-    public void rebalance() {
+    public void rebalance() throws InterruptedException {
         if (state.get() != NodeState.Fresh) {
             balancingPolicy.rebalance();
         }
@@ -644,11 +668,18 @@ public class Cluster
     /**
      * Sets the state of the current Ordasity node and notifies others via ZooKeeper.
     */
-    private void setState(NodeState to) {
-      final NodeInfo myInfo = new NodeInfo(to.toString(), zk.get().getSessionId());
-      byte[] encoded = JsonUtil.asJSONBytes(myInfo);
-      ZKUtils.set(zk, "/" + name + "/nodes/" + myNodeID, encoded);
-      state.set(to);
+    private boolean setState(NodeState to)
+    {
+        try {
+            NodeInfo myInfo = new NodeInfo(to.toString(), zk.get().getSessionId());
+            byte[] encoded = JsonUtil.asJSONBytes(myInfo);
+            ZKUtils.set(zk, "/" + name + "/nodes/" + myNodeID, encoded);
+            state.set(to);
+            return true;
+        } catch (Exception e) { // InterruptedException, IOException
+            LOG.warn("Problem trying to setState("+to+"): "+e.getMessage(), e);
+            return false;
+        }
     }
 
 

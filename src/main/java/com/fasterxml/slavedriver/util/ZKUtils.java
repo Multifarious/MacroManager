@@ -27,16 +27,22 @@ public class ZKUtils
     private final static byte[] NO_BYTES = new byte[0];
     
     public static void ensureOrdasityPaths(ZooKeeperClient zk, String name, String unit, String unitShort)
-            throws ZooKeeperConnectionException, InterruptedException, KeeperException
+            throws InterruptedException
     {
         ArrayList<ACL> acl = Ids.OPEN_ACL_UNSAFE;
-        ZooKeeperUtils.ensurePath(zk, acl, String.format("/%s/nodes", name));
-        ZooKeeperUtils.ensurePath(zk, acl, String.format("/%s", unit));
-        ZooKeeperUtils.ensurePath(zk, acl, String.format("/%s/meta/rebalance", name));
-        ZooKeeperUtils.ensurePath(zk, acl, String.format("/%s/meta/workload", name));
-        ZooKeeperUtils.ensurePath(zk, acl, String.format("/%s/claimed-%s", name, unitShort));
-        ZooKeeperUtils.ensurePath(zk, acl, String.format("/%s/handoff-requests", name));
-        ZooKeeperUtils.ensurePath(zk, acl, String.format("/%s/handoff-result", name));
+        try {
+            ZooKeeperUtils.ensurePath(zk, acl, String.format("/%s/nodes", name));
+            ZooKeeperUtils.ensurePath(zk, acl, String.format("/%s", unit));
+            ZooKeeperUtils.ensurePath(zk, acl, String.format("/%s/meta/rebalance", name));
+            ZooKeeperUtils.ensurePath(zk, acl, String.format("/%s/meta/workload", name));
+            ZooKeeperUtils.ensurePath(zk, acl, String.format("/%s/claimed-%s", name, unitShort));
+            ZooKeeperUtils.ensurePath(zk, acl, String.format("/%s/handoff-requests", name));
+            ZooKeeperUtils.ensurePath(zk, acl, String.format("/%s/handoff-result", name));
+        } catch (KeeperException e) {
+            throw ZKException.from(e);
+        } catch (ZooKeeperConnectionException e) {
+            throw ZKException.from(e);
+        }
     }
 
     public static boolean createEphemeral(ZooKeeperClient zk, String path)

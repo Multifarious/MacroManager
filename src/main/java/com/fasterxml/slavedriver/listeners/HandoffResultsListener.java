@@ -1,5 +1,6 @@
 package com.fasterxml.slavedriver.listeners;
 
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.zookeeper.WatchedEvent;
@@ -10,7 +11,6 @@ import org.slf4j.LoggerFactory;
 
 import com.fasterxml.slavedriver.Cluster;
 import com.fasterxml.slavedriver.ClusterConfig;
-import com.fasterxml.slavedriver.NodeInfo;
 import com.fasterxml.slavedriver.NodeState;
 import com.fasterxml.slavedriver.util.ZKUtils;
 import com.twitter.common.zookeeper.ZooKeeperMap;
@@ -78,11 +78,14 @@ public class HandoffResultsListener
      */
     private Runnable shutdownAfterHandoff(final String workUnit)
     {
+        final Map<String,String> handoffResults = cluster.handoffResults;
+        final Cluster cluster = this.cluster;
+        final Logger log = LOG;
         return new Runnable() {
             @Override
             public void run() {
-                String str = cluster.handoffResults.get(workUnit);
-                LOG.info("Shutting down {} following handoff to {}.",
+                String str = handoffResults.get(workUnit);
+                log.info("Shutting down {} following handoff to {}.",
                         workUnit, (str == null) ? "(None)" : str);
                 cluster.shutdownWork(workUnit, /*doLog =*/ false);
 
