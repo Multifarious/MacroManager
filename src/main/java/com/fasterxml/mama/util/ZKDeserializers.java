@@ -1,12 +1,12 @@
-package com.fasterxml.slavedriver.util;
+package com.fasterxml.mama.util;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.google.common.base.Function;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.fasterxml.slavedriver.NodeInfo;
-import com.fasterxml.slavedriver.NodeState;
+import com.fasterxml.mama.NodeInfo;
+import com.fasterxml.mama.NodeState;
 
 /**
  * Helper classes needed to work with "ZooKeeperMap"

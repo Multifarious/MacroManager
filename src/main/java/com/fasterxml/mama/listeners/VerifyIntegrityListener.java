@@ -1,10 +1,10 @@
-package com.fasterxml.slavedriver.listeners;
+package com.fasterxml.mama.listeners;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.fasterxml.slavedriver.Cluster;
-import com.fasterxml.slavedriver.ClusterConfig;
+import com.fasterxml.mama.Cluster;
+import com.fasterxml.mama.ClusterConfig;
 import com.twitter.common.zookeeper.ZooKeeperMap;
 
 public class VerifyIntegrityListener<T>

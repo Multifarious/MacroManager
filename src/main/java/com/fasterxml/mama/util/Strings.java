@@ -1,4 +1,4 @@
-package com.fasterxml.slavedriver.util;
+package com.fasterxml.mama.util;
 
 import java.nio.charset.Charset;
 import java.util.Collection;

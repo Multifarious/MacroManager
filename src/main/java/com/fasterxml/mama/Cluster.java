@@ -1,4 +1,4 @@
-package com.fasterxml.slavedriver;
+package com.fasterxml.mama;
 
 import java.net.InetSocketAddress;
 import java.util.*;
@@ -30,13 +30,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.fasterxml.slavedriver.balancing.BalancingPolicy;
-import com.fasterxml.slavedriver.balancing.CountBalancingPolicy;
-import com.fasterxml.slavedriver.balancing.MeteredBalancingPolicy;
-import com.fasterxml.slavedriver.listeners.ClusterNodesChangedListener;
-import com.fasterxml.slavedriver.listeners.HandoffResultsListener;
-import com.fasterxml.slavedriver.listeners.VerifyIntegrityListener;
-import com.fasterxml.slavedriver.util.*;
+import com.fasterxml.mama.balancing.BalancingPolicy;
+import com.fasterxml.mama.balancing.CountBalancingPolicy;
+import com.fasterxml.mama.balancing.MeteredBalancingPolicy;
+import com.fasterxml.mama.listeners.ClusterNodesChangedListener;
+import com.fasterxml.mama.listeners.HandoffResultsListener;
+import com.fasterxml.mama.listeners.VerifyIntegrityListener;
+import com.fasterxml.mama.util.*;
 
 public class Cluster
     implements ClusterMBean

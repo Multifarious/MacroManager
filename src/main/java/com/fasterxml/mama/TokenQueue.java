@@ -1,4 +1,4 @@
-package com.fasterxml.slavedriver;
+package com.fasterxml.mama;
 
 import java.util.concurrent.LinkedBlockingQueue;
 

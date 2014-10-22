@@ -1,4 +1,4 @@
-package com.fasterxml.slavedriver.balancing;
+package com.fasterxml.mama.balancing;
 
 import java.util.*;
 import java.util.concurrent.CountDownLatch;
@@ -10,12 +10,12 @@ import org.slf4j.LoggerFactory;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.fasterxml.slavedriver.Cluster;
-import com.fasterxml.slavedriver.ClusterConfig;
-import com.fasterxml.slavedriver.NodeInfo;
-import com.fasterxml.slavedriver.NodeState;
-import com.fasterxml.slavedriver.util.Strings;
-import com.fasterxml.slavedriver.util.ZKUtils;
+import com.fasterxml.mama.Cluster;
+import com.fasterxml.mama.ClusterConfig;
+import com.fasterxml.mama.NodeInfo;
+import com.fasterxml.mama.NodeState;
+import com.fasterxml.mama.util.Strings;
+import com.fasterxml.mama.util.ZKUtils;
 import com.twitter.common.zookeeper.ZooKeeperClient.ZooKeeperConnectionException;
 
 public abstract class BalancingPolicy

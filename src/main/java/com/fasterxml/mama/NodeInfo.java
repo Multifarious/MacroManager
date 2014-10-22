@@ -1,4 +1,4 @@
-package com.fasterxml.slavedriver;
+package com.fasterxml.mama;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;

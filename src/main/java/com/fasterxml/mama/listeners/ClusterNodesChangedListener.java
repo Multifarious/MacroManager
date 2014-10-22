@@ -1,11 +1,11 @@
-package com.fasterxml.slavedriver.listeners;
+package com.fasterxml.mama.listeners;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.fasterxml.slavedriver.Cluster;
-import com.fasterxml.slavedriver.NodeInfo;
-import com.fasterxml.slavedriver.util.Strings;
+import com.fasterxml.mama.Cluster;
+import com.fasterxml.mama.NodeInfo;
+import com.fasterxml.mama.util.Strings;
 import com.twitter.common.zookeeper.ZooKeeperMap;
 
 public class ClusterNodesChangedListener

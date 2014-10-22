@@ -1,4 +1,4 @@
-package com.fasterxml.slavedriver.balancing;
+package com.fasterxml.mama.balancing;
 
 import java.util.*;
 import java.util.concurrent.ScheduledFuture;
@@ -9,11 +9,11 @@ import org.apache.zookeeper.CreateMode;
 import com.codahale.metrics.Gauge;
 import com.codahale.metrics.Meter;
 import com.codahale.metrics.MetricRegistry;
-import com.fasterxml.slavedriver.*;
-import com.fasterxml.slavedriver.listeners.HandoffResultsListener;
-import com.fasterxml.slavedriver.util.JsonUtil;
-import com.fasterxml.slavedriver.util.Strings;
-import com.fasterxml.slavedriver.util.ZKUtils;
+import com.fasterxml.mama.*;
+import com.fasterxml.mama.listeners.HandoffResultsListener;
+import com.fasterxml.mama.util.JsonUtil;
+import com.fasterxml.mama.util.Strings;
+import com.fasterxml.mama.util.ZKUtils;
 
 public class MeteredBalancingPolicy
     extends BalancingPolicy

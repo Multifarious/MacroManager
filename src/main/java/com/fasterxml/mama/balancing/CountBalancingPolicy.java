@@ -1,10 +1,10 @@
-package com.fasterxml.slavedriver.balancing;
+package com.fasterxml.mama.balancing;
 
 import java.util.Set;
 
-import com.fasterxml.slavedriver.Cluster;
-import com.fasterxml.slavedriver.listeners.HandoffResultsListener;
-import com.fasterxml.slavedriver.util.Strings;
+import com.fasterxml.mama.Cluster;
+import com.fasterxml.mama.listeners.HandoffResultsListener;
+import com.fasterxml.mama.util.Strings;
 
 /**
  * Count-based load balancing policy is simple. A node in the cluster

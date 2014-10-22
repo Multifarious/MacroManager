@@ -1,4 +1,4 @@
-package com.fasterxml.slavedriver.util;
+package com.fasterxml.mama.util;
 
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicInteger;

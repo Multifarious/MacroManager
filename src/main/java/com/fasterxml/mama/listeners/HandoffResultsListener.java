@@ -1,4 +1,4 @@
-package com.fasterxml.slavedriver.listeners;
+package com.fasterxml.mama.listeners;
 
 import java.util.concurrent.TimeUnit;
 
@@ -8,10 +8,10 @@ import org.apache.zookeeper.data.Stat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.fasterxml.slavedriver.Cluster;
-import com.fasterxml.slavedriver.ClusterConfig;
-import com.fasterxml.slavedriver.NodeState;
-import com.fasterxml.slavedriver.util.ZKUtils;
+import com.fasterxml.mama.Cluster;
+import com.fasterxml.mama.ClusterConfig;
+import com.fasterxml.mama.NodeState;
+import com.fasterxml.mama.util.ZKUtils;
 import com.twitter.common.zookeeper.ZooKeeperMap;
 
 public class HandoffResultsListener
