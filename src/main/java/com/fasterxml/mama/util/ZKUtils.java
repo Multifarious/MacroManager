@@ -2,21 +2,18 @@ package com.fasterxml.mama.util;
 
 import java.util.ArrayList;
 
-import com.twitter.common.zookeeper.ZooKeeperClient.ZooKeeperConnectionException;
-import com.twitter.common.zookeeper.ZooKeeperUtils;
-import com.twitter.common.zookeeper.ZooKeeperClient;
-
-import org.apache.zookeeper.KeeperException;
+import org.apache.zookeeper.*;
 import org.apache.zookeeper.ZooDefs.Ids;
 import org.apache.zookeeper.KeeperException.NoNodeException;
 import org.apache.zookeeper.KeeperException.NodeExistsException;
-import org.apache.zookeeper.Watcher;
-import org.apache.zookeeper.CreateMode;
-import org.apache.zookeeper.ZooKeeper;
 import org.apache.zookeeper.data.ACL;
 import org.apache.zookeeper.data.Stat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import com.fasterxml.mama.twitzk.ZooKeeperClient;
+import com.fasterxml.mama.twitzk.ZooKeeperConnectionException;
+import com.fasterxml.mama.twitzk.ZooKeeperUtils;
 
 public class ZKUtils
 {

@@ -5,8 +5,8 @@ import org.slf4j.LoggerFactory;
 
 import com.fasterxml.mama.Cluster;
 import com.fasterxml.mama.NodeInfo;
+import com.fasterxml.mama.twitzk.ZooKeeperMap;
 import com.fasterxml.mama.util.Strings;
-import com.twitter.common.zookeeper.ZooKeeperMap;
 
 public class ClusterNodesChangedListener
     implements ZooKeeperMap.Listener<NodeInfo>

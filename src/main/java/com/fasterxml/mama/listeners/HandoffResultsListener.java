@@ -11,8 +11,8 @@ import org.slf4j.LoggerFactory;
 import com.fasterxml.mama.Cluster;
 import com.fasterxml.mama.ClusterConfig;
 import com.fasterxml.mama.NodeState;
+import com.fasterxml.mama.twitzk.ZooKeeperMap;
 import com.fasterxml.mama.util.ZKUtils;
-import com.twitter.common.zookeeper.ZooKeeperMap;
 
 public class HandoffResultsListener
     implements ZooKeeperMap.Listener<String>

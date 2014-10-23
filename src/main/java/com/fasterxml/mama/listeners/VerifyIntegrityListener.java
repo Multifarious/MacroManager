@@ -5,7 +5,7 @@ import org.slf4j.LoggerFactory;
 
 import com.fasterxml.mama.Cluster;
 import com.fasterxml.mama.ClusterConfig;
-import com.twitter.common.zookeeper.ZooKeeperMap;
+import com.fasterxml.mama.twitzk.ZooKeeperMap;
 
 public class VerifyIntegrityListener<T>
     implements ZooKeeperMap.Listener<T>

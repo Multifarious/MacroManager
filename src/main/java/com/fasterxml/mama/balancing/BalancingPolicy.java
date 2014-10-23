@@ -16,7 +16,6 @@ import com.fasterxml.mama.NodeInfo;
 import com.fasterxml.mama.NodeState;
 import com.fasterxml.mama.util.Strings;
 import com.fasterxml.mama.util.ZKUtils;
-import com.twitter.common.zookeeper.ZooKeeperClient.ZooKeeperConnectionException;
 
 public abstract class BalancingPolicy
 {

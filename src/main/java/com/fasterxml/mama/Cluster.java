@@ -14,11 +14,6 @@ import javax.management.ObjectName;
 import com.codahale.metrics.Gauge;
 import com.codahale.metrics.Meter;
 import com.codahale.metrics.MetricRegistry;
-import com.twitter.common.quantity.Time;
-import com.twitter.common.quantity.Amount;
-import com.twitter.common.zookeeper.ZooKeeperClient;
-import com.twitter.common.zookeeper.ZooKeeperClient.ZooKeeperConnectionException;
-import com.twitter.common.zookeeper.ZooKeeperMap;
 
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.WatchedEvent;
@@ -36,6 +31,11 @@ import com.fasterxml.mama.balancing.MeteredBalancingPolicy;
 import com.fasterxml.mama.listeners.ClusterNodesChangedListener;
 import com.fasterxml.mama.listeners.HandoffResultsListener;
 import com.fasterxml.mama.listeners.VerifyIntegrityListener;
+import com.fasterxml.mama.twitzk.Amount;
+import com.fasterxml.mama.twitzk.Time;
+import com.fasterxml.mama.twitzk.ZooKeeperClient;
+import com.fasterxml.mama.twitzk.ZooKeeperConnectionException;
+import com.fasterxml.mama.twitzk.ZooKeeperMap;
 import com.fasterxml.mama.util.*;
 
 public class Cluster

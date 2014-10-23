@@ -1,6 +1,6 @@
 package com.fasterxml.mama;
 
-import com.twitter.common.zookeeper.ZooKeeperClient;
+import com.fasterxml.mama.twitzk.ZooKeeperClient;
 
 public abstract class SimpleListener {
     public void onJoin(ZooKeeperClient client) { }

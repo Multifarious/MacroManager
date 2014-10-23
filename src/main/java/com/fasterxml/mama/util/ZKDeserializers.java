@@ -3,10 +3,10 @@ package com.fasterxml.mama.util;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.google.common.base.Function;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.mama.NodeInfo;
 import com.fasterxml.mama.NodeState;
+import com.google.common.base.Function;
 
 /**
  * Helper classes needed to work with "ZooKeeperMap"

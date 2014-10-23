@@ -117,6 +117,8 @@ Experimental Java port of Ordasity scheduling library
                 </exclusion>
             </exclusions>
         </dependency>
+
+<!--                
         <dependency>
             <groupId>com.twitter.common.zookeeper</groupId>
             <artifactId>client</artifactId>
@@ -136,6 +138,7 @@ Experimental Java port of Ordasity scheduling library
                 </exclusion>
             </exclusions>
         </dependency>
+
         <dependency>
             <groupId>com.twitter.common.zookeeper</groupId>
             <artifactId>map</artifactId>
@@ -151,6 +154,7 @@ Experimental Java port of Ordasity scheduling library
                 </exclusion>
             </exclusions>
         </dependency>
+        -->
 
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
@@ -161,6 +165,13 @@ Experimental Java port of Ordasity scheduling library
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
             <version>2.4.3</version>
+        </dependency>
+
+        <!-- ZooKeeper helpers use Guava -->
+        <dependency>
+            <groupId>com.google.guava</groupId>
+            <artifactId>guava</artifactId>
+            <version>15.0</version>
         </dependency>
 
         <dependency>

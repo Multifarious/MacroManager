@@ -2,7 +2,7 @@ package com.fasterxml.mama.util;
 
 import org.apache.zookeeper.KeeperException;
 
-import com.twitter.common.zookeeper.ZooKeeperClient.ZooKeeperConnectionException;
+import com.fasterxml.mama.twitzk.ZooKeeperConnectionException;
 
 public class ZKException extends RuntimeException
 {
