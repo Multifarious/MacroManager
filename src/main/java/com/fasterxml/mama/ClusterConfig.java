@@ -28,4 +28,16 @@ public class ClusterConfig
     public long handoffShutdownDelay = 10L;
 
     public ClusterConfig() { }
+
+    public ClusterConfig hosts(String v) { hosts = v; return this; }
+    public ClusterConfig enableAutoRebalance(boolean v) { enableAutoRebalance = v; return this; }
+    public ClusterConfig autoRebalanceInterval(int v) { autoRebalanceInterval = v; return this; }
+    public ClusterConfig drainTime(int v) { drainTime = v; return this; }
+    public ClusterConfig useSmartBalancing(boolean v) { useSmartBalancing = v; return this; }
+    public ClusterConfig zkTimeout(long v) { zkTimeout = v; return this; }
+    public ClusterConfig workUnitName(String v) { workUnitName = v; return this; }
+    public ClusterConfig workUnitShortName(String v) { workUnitShortName = v; return this; }
+    public ClusterConfig nodeId(String v) { nodeId = v; return this; }
+    public ClusterConfig useSoftHandoff(boolean v) { useSoftHandoff = v; return this; }
+    public ClusterConfig handoffShutdownDelay(long v) { handoffShutdownDelay = v; return this; }
 }
