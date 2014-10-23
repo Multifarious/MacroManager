@@ -80,7 +80,7 @@ Experimental Java port of Ordasity scheduling library
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
-            <version>1.7.5</version>
+            <version>1.7.7</version>
         </dependency>
         <!-- 22-Oct-2014, tatu: Not 100% sure why this is needed, but without
            such dep, looks like Bad Things happen when running things like Kafka.
