@@ -215,4 +215,14 @@ Experimental Java port of Ordasity scheduling library
             </build>
         </profile>
     </profiles>
+
+    <!-- Looks like Twitter hasn't pushed zookeeper stuff into Maven central for some reason
+      -->
+    <repositories>
+        <repository>
+            <id>twitter</id>
+            <url>http://maven.twttr.com/</url>
+        </repository>
+    </repositories>
+
 </project>
