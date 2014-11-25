@@ -9,7 +9,7 @@
 
     <groupId>com.fasterxml.mama</groupId>
     <artifactId>macro-manager</artifactId>
-    <version>0.5.0-SNAPSHOT</version>
+    <version>0.5.0</version>
     <packaging>bundle</packaging>
     <name>macro-manager</name>
     <description>
@@ -34,7 +34,7 @@ Experimental Java port of Ordasity scheduling library
         <connection>scm:git:git@github.com:FasterXML/MacroManager.git</connection>
         <developerConnection>scm:git:git@github.com:FasterXML/MacroManager.git</developerConnection>
         <url>https://github.com/FasterXML/MacroManager</url>
-        <tag>macro-manager-0.5.0</tag>
+        <tag>0.5.0c</tag>
     </scm>
     <licenses>
         <license>
