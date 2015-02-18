@@ -34,7 +34,7 @@ public class MeteredBalancingPolicy
     {
         super(c);
         if (!(listener instanceof SmartListener)) {
-                throw new RuntimeException("Ordasity's metered balancing policy must be initialized with " +
+                throw new RuntimeException("MaMa's metered balancing policy must be initialized with " +
                   "a SmartListener, but you provided a simple listener. Please flip that so we can tick " +
                   "the meter as your application performs work!");
         }
@@ -89,7 +89,7 @@ public class MeteredBalancingPolicy
                 final String workUnit = unclaimed.poll();
                 if (config.useSoftHandoff && cluster.containsHandoffRequest(workUnit)
                         && isFairGame(workUnit) && attemptToClaim(workUnit, true)) {
-                    LOG.info(String.format(workUnit));
+                    LOG.info(workUnit);
                     handoffListener.finishHandoff(workUnit);
                 } else if (isFairGame(workUnit)) {
                     attemptToClaim(workUnit);
@@ -175,7 +175,10 @@ public class MeteredBalancingPolicy
                     NodeInfo myInfo = new NodeInfo(cluster.getState().toString(), cluster.zk.get().getSessionId());
                     byte[] myInfoEncoded = JsonUtil.asJSONBytes(myInfo);
                     ZKUtils.setOrCreate(cluster.zk, nodeLoadPath, myInfoEncoded, CreateMode.EPHEMERAL);
-                    LOG.info("My load: {}", myLoad());
+                    if (LOG.isDebugEnabled()) {
+                        // TODO: Shouldn't be evaluating methods inside of a logging statement.
+                        LOG.debug("My load: {}", myLoad());
+                    }
                 } catch (Exception e) {
                     LOG.error("Error reporting load info to ZooKeeper.", e);
                 }

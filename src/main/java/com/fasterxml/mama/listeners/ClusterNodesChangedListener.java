@@ -22,7 +22,7 @@ public class ClusterNodesChangedListener
     @Override
     public void nodeChanged(String nodeName, NodeInfo data) {
         if (cluster.isInitialized()) {
-            LOG.info("Nodes: {}", Strings.mkstringForKeys(cluster.nodes, ", "));
+            LOG.debug("Nodes: {}", Strings.mkstringForKeys(cluster.nodes, ", "));
             cluster.requestClaim();
             cluster.verifyIntegrity();
         }
