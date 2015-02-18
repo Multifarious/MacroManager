@@ -336,7 +336,7 @@ public class Cluster
             LOG.warn("'join' called after started; ignoring.");
             break;
         }
-        // why note Enum itself?
+        // why not Enum itself?
         return state.get().toString();
     }
 
@@ -345,7 +345,7 @@ public class Cluster
      * when the JVM exits normally (via Ctrl+C or SIGTERM for example)
      *
      * this alerts other applications which have discovered this instance that it is
-     * down so they may avoid remitting requests. otherwise this will not happen until
+     * down so they may avoid re-submitting requests. otherwise this will not happen until
      * the default zookeeper timeout of 10s during which requests will fail until
      * the application is up and accepting requests again
      */
@@ -534,7 +534,6 @@ public class Cluster
 
       autoRebalanceFuture = pool.get().scheduleAtFixedRate(runRebalance, interval, interval, TimeUnit.SECONDS);
     }
-
 
     /**
      * Registers this node with Zookeeper on startup, retrying until it succeeds.
