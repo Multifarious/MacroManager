@@ -107,33 +107,38 @@ public class Cluster
         public void process(WatchedEvent event) {
             final KeeperState ks = event.getState();
             switch (ks) {
-            case SyncConnected:
-                LOG.info("ZooKeeper session established.");
-                connected.set(true);
-                try {
-                    if (state.get() != NodeState.Shutdown) {
-                        onConnect();
-                    } else {
-                        LOG.info("This node is shut down. ZK connection re-established, but not relaunching.");
+                case SyncConnected:
+                    LOG.info("ZooKeeper session established.");
+                    connected.set(true);
+                    try {
+                        if (state.get() != NodeState.Shutdown) {
+                            onConnect();
+                        } else {
+                            LOG.info("This node is shut down. ZK connection re-established, but not relaunching.");
+                        }
+                    } catch (Exception e) {
+                        LOG.error("Exception during zookeeper connection established callback", e);
                     }
-                } catch (Exception e) {
-                    LOG.error("Exception during zookeeper connection established callback", e);
-                }
-                break;
-            case Expired:
-                LOG.info("ZooKeeper session expired.");
-                connected.set(false);
-                forceShutdown();
-                awaitReconnect();
-            case Disconnected:
-                LOG.info("ZooKeeper session disconnected. Awaiting reconnect...");
-                connected.set(false);
-                awaitReconnect();
+                    break;
 
-            default: // actually, should only be AuthFaiLed?
-                LOG.info("ZooKeeper session interrupted. Shutting down due to event "+ks);
-                connected.set(false);
-                awaitReconnect();
+                case Expired:
+                    LOG.info("ZooKeeper session expired.");
+                    connected.set(false);
+                    forceShutdown();
+                    awaitReconnect();
+                    break;
+
+                case Disconnected:
+                    LOG.info("ZooKeeper session disconnected. Awaiting reconnect...");
+                    connected.set(false);
+                    awaitReconnect();
+                    break;
+
+                default: // actually, should only be AuthFaiLed?
+                    LOG.info("ZooKeeper session interrupted. Shutting down due to event "+ks);
+                    connected.set(false);
+                    awaitReconnect();
+                    break;
             }
         }
     };
@@ -384,6 +389,7 @@ public class Cluster
                         LOG.error("Invalid ZK host '"+host+"', need to skip, problem: "+e.getMessage());
                     }
                 }
+                // TODO: What about empty hosts at this point?
                 LOG.info("Connecting to hosts: {}", hosts.toString());
                 injectedClient = new ZooKeeperClient(Amount.of((int) config.zkTimeout, Time.MILLISECONDS),
                         hosts);
