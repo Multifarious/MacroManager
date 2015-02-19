@@ -42,7 +42,7 @@ public class Cluster
     implements ClusterMBean
     //with Instrumented
 {
-    final public static String PROJECT_NAME = "SlaveDriver";
+    final public static String PROJECT_NAME = "MacroManager";
     
     final protected Logger LOG = LoggerFactory.getLogger(getClass());
 
@@ -157,7 +157,7 @@ public class Cluster
         shortName = config.workUnitShortName;
 //        this.metrics = metrics;
 
-        claimer = new Claimer(metrics, this, "ordasity-claimer-" + name);
+        claimer = new Claimer(metrics, this, "macromanager-claimer-" + name);
         handoffResultsListener = new HandoffResultsListener(this);
         balancingPolicy = config.useSmartBalancing
                 ? new MeteredBalancingPolicy(this, handoffResultsListener, metrics, l)
@@ -312,15 +312,15 @@ public class Cluster
     /**
      * Joins the cluster, claims work, and begins operation.
      */
-    @Override
+    @Override // from ClusterMBean
     public String join() throws InterruptedException {
-        return join(null);
+        return String.valueOf(join(null));
     }
 
     /**
      * Joins the cluster using a custom zk client, claims work, and begins operation.
      */
-    public String join(ZooKeeperClient injectedClient) throws InterruptedException
+    public NodeState join(ZooKeeperClient injectedClient) throws InterruptedException
     {
         switch (state.get()) {
         case Fresh:
@@ -337,7 +337,7 @@ public class Cluster
             break;
         }
         // why not Enum itself?
-        return state.get().toString();
+        return state.get();
     }
 
     /**
@@ -704,7 +704,6 @@ public class Cluster
         }
     }
 
-
     /**
      * Initiates a cluster rebalance. If smart balancing is enabled, the target load
      * is set to (total cluster load / node count), where "load" is determined by the
@@ -735,11 +734,10 @@ public class Cluster
         }
     }
 
-
     /**
      * Determines if another ZooKeeper session is currently active for the current node
      * by comparing the ZooKeeper session ID of the connection stored in NodeState.
-    */
+     */
     private boolean previousZKSessionStillActive()
     {
         try {
