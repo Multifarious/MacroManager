@@ -364,11 +364,12 @@ public class Cluster
         while (true) {
           try {
               LOG.info("Awaiting reconnection to ZooKeeper...");
-              zk.get(Amount.of(1L, Time.SECONDS));
+              zk.get(Amount.of(5L, Time.SECONDS));
+              return;
           } catch (TimeoutException e) {
-              LOG.warn("Timed out reconnecting to ZooKeeper.", e);
+              LOG.warn("Timed out reconnecting to ZooKeeper; will retry.");
           } catch (Exception e) {
-              LOG.error("Error reconnecting to ZooKeeper", e);
+              LOG.error("Error reconnecting to ZooKeeper; will retry.", e);
           }
         }
     }
