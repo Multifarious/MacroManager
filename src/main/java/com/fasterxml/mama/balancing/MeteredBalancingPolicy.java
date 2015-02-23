@@ -15,13 +15,12 @@ import com.fasterxml.mama.util.JsonUtil;
 import com.fasterxml.mama.util.Strings;
 import com.fasterxml.mama.util.ZKUtils;
 
+import javax.annotation.Nonnull;
+
 public class MeteredBalancingPolicy
     extends BalancingPolicy
 {
     protected final Map<String,Meter> meters = new HashMap<String,Meter>();
-
-    // Is this really needed?
-    protected final Map<String,Meter> persistentMeterCache = new HashMap<String,Meter>();
 
     private ScheduledFuture<?> loadFuture;
 
@@ -38,7 +37,7 @@ public class MeteredBalancingPolicy
                   "a SmartListener, but you provided a simple listener. Please flip that so we can tick " +
                   "the meter as your application performs work!");
         }
-        handoffListener = l;
+        this.handoffListener = l;
         this.metrics = metrics;
 
         // 17-Oct-2014, tatu: Not 100% this was correct translation of the intent; would seem
@@ -49,25 +48,27 @@ public class MeteredBalancingPolicy
                 return myLoad();
             }
         };
-        metrics.register("myLoad", loadGauge);
+        metrics.register(MetricRegistry.name(MeteredBalancingPolicy.class,"myLoad"), loadGauge);
     }
 
-    public Meter findOrCreateMetrics(String workUnit)
+    public Meter findOrCreateMetrics(@Nonnull String workUnit)
     {
         Meter meter;
-        synchronized (persistentMeterCache) {
-            meter = persistentMeterCache.get(workUnit);
-            if (meter == null) {
-                meter = new Meter();
-                metrics.register(workUnit+".processing", meter);
-            }
-        }
         synchronized (meters) {
-            meters.put(workUnit, meter);
+            if (meters.containsKey(workUnit)) {
+                meter = meters.get(workUnit);
+            } else {
+                meter = metrics.meter(meterName(workUnit));
+                meters.put(workUnit, meter);
+            }
         }
         return meter;
     }
-    
+
+    private String meterName(@Nonnull String workUnit) {
+        return MetricRegistry.name(MeteredBalancingPolicy.class, workUnit, "processed");
+    }
+
     /**
      * Begins by claiming all work units that are pegged to this node.
      * Then, continues to claim work from the available pool until we've claimed
@@ -134,7 +135,7 @@ public class MeteredBalancingPolicy
         for (String wu : cluster.myWorkUnits) {
             Double d = cluster.getWorkUnitLoad(wu);
             if (d != null) {
-                load += d.doubleValue();
+                load += d;
             }
         }
         return load;
@@ -270,6 +271,7 @@ public class MeteredBalancingPolicy
     public void onShutdownWork(String workUnit) {
         synchronized (meters) {
             meters.remove(workUnit);
+            metrics.remove(meterName(workUnit));
         }
     }
 }
