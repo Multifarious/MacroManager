@@ -25,6 +25,7 @@ import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.KeeperException.NoNodeException;
 import org.apache.zookeeper.Watcher;
 import org.apache.zookeeper.Watcher.Event.KeeperState;
+import org.apache.zookeeper.data.Stat;
 import org.cliffc.high_scale_lib.NonBlockingHashSet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -552,6 +553,20 @@ public class Cluster
             byte[] encoded = JsonUtil.asJSONBytes(myInfo);
             if (ZKUtils.createEphemeral(zk, "/" + name + "/nodes/" + myNodeID, encoded)) {
                 return;
+            } else {
+                Stat stat = new Stat();
+                try {
+                    byte[] bytes = zk.get().getData("/" + name + "/nodes/" + myNodeID, false, stat);
+                    NodeInfo nodeInfo = JsonUtil.fromJSON(bytes, NodeInfo.class);
+                    if(nodeInfo.connectionID == zk.get().getSessionId()) {
+                        // As it turns out, our session is already registered!
+                        return;
+                    }
+                } catch (ZooKeeperConnectionException e) {
+                    throw ZKException.from(e);
+                } catch (KeeperException e) {
+                    throw ZKException.from(e);
+                }
             }
             LOG.warn("Unable to register with Zookeeper on launch. " +
                     "Is {} already running on this host? Retrying in 1 second...", name);
