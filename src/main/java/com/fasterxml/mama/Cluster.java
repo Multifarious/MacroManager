@@ -425,9 +425,8 @@ public class Cluster
                 @Override
                 public void run() {
                     balancingPolicy.drainToCount(0, false);
-                    LOG.info("Sleeping for " + waitTime + " seconds.");
                     try {
-                        Thread.sleep(waitTime * 1000L);
+                        Thread.sleep(waitTime);
                     } catch (InterruptedException e) {
                         LOG.warn("Interrupted while waiting.");
                     }
