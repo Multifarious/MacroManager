@@ -419,7 +419,7 @@ public class Cluster
      */
 
     public void stopAndWait(final long waitTime, final AtomicBoolean stopFlag) {
-        if (!waitInProgress.getAndSet(true))
+        if (!waitInProgress.getAndSet(true)) {
             stopFlag.set(true);
             rejoinExecutor.submit(new Runnable() {
                 @Override
@@ -436,6 +436,7 @@ public class Cluster
                     waitInProgress.set(false);
                 }
             });
+        }
     }
 
     /**
