@@ -44,11 +44,11 @@ public class Cluster
     //with Instrumented
 {
     final public static String PROJECT_NAME = "MacroManager";
-    
+
     final protected Logger LOG = LoggerFactory.getLogger(getClass());
 
     // // Basic configuration
-    
+
     // left public+final for simplicity; not a big deal either way
     final public String name;
     final public String myNodeID;
@@ -57,14 +57,14 @@ public class Cluster
     final private SimpleListener listener;
     final private ClusterConfig config;
     final protected AtomicReference<NodeState> state = new AtomicReference<NodeState>(NodeState.Fresh);
-    
+
     // // Helper objects
 
     final protected HandoffResultsListener handoffResultsListener;
     final private BalancingPolicy balancingPolicy;
-    
+
     // // Various on/off sets
-    
+
     final private AtomicBoolean watchesRegistered = new AtomicBoolean(false);
     final private AtomicBoolean initialized = new AtomicBoolean(false);
     final private CountDownLatch initializedLatch = new CountDownLatch(1);
@@ -81,15 +81,20 @@ public class Cluster
     final private Claimer claimer;
 
     // // ZooKeeper-backed Maps
-    
+
     public Map<String,ObjectNode> allWorkUnits;
     public Map<String,NodeInfo> nodes;
     public Map<String,String> workUnitMap;
-    
+
     // Scheduled executions
 
     final private AtomicReference<ScheduledThreadPoolExecutor> pool;
     private ScheduledFuture<?> autoRebalanceFuture; // Option[ScheduledFuture[_]] = None
+
+    // Objects for stopAndWait()
+
+    final private ExecutorService rejoinExecutor = Executors.newSingleThreadExecutor();
+    final private AtomicBoolean waitInProgress = new AtomicBoolean(false);
 
     // Metrics
 
@@ -100,7 +105,7 @@ public class Cluster
     final private Gauge<String> nodeStateGauge;
 
     // And ZooKeeper
-            
+
     public ZooKeeperClient zk;
 
     final private Watcher connectionWatcher = new Watcher() {
@@ -143,11 +148,11 @@ public class Cluster
             }
         }
     };
-    
+
     public Cluster(String n, SimpleListener l, ClusterConfig config) {
         this(n, l, config, new MetricRegistry());
     }
-    
+
     public Cluster(String n, SimpleListener l, ClusterConfig config,
             MetricRegistry metrics)
     {
@@ -165,7 +170,7 @@ public class Cluster
                 : new CountBalancingPolicy(this, handoffResultsListener);
                 ;
         pool = new AtomicReference<ScheduledThreadPoolExecutor>(createScheduledThreadExecutor());
-        
+
         listGauge = new Gauge<String>() {
             @Override
             public String getValue() {
@@ -210,7 +215,7 @@ public class Cluster
     private ScheduledThreadPoolExecutor createScheduledThreadExecutor() {
         return new ScheduledThreadPoolExecutor(1, new NamedThreadFactory(PROJECT_NAME + "-scheduler"));
     }
-    
+
     // // // Trivial accessors
 
     public boolean isInitialized() {
@@ -220,11 +225,11 @@ public class Cluster
     public boolean isConnected() {
         return connected.get();
     }
-    
+
     public boolean isMe(String other) {
         return myNodeID.equals(other);
     }
-    
+
     /**
      * Given a path, determines whether or not the value of a ZNode is my node ID.
      */
@@ -232,7 +237,7 @@ public class Cluster
         String value = ZKUtils.get(zk, path);
         return (value != null && value == myNodeID);
     }
-    
+
     public ClusterConfig getConfig() { return config; }
 
     public NodeState getState() {
@@ -297,9 +302,9 @@ public class Cluster
     public String getHandoffResult(String workUnit) {
         return handoffResults.get(workUnit);
     }
-    
+
     // // // Access to helper objects
-    
+
     public void schedule(Runnable r, long delay, TimeUnit unit) {
         pool.get().schedule(r, delay, unit);
     }
@@ -307,9 +312,9 @@ public class Cluster
     public ScheduledFuture<?> scheduleAtFixedRate(Runnable r, long initial, long period, TimeUnit unit) {
         return pool.get().scheduleAtFixedRate(r, initial, period, unit);
     }
-    
+
     // // // Active API
-    
+
     /**
      * Joins the cluster, claims work, and begins operation.
      */
@@ -406,6 +411,30 @@ public class Cluster
             zk.get();
         } catch (ZooKeeperConnectionException e) {
             throw ZKException.from(e);
+        }
+    }
+
+    /**
+     * For handling problematic nodes - drains workers and does not claim work for waitTime seconds
+     */
+
+    public void stopAndWait(final long waitTime, final AtomicBoolean stopFlag) {
+        if (!waitInProgress.getAndSet(true)) {
+            stopFlag.set(true);
+            rejoinExecutor.submit(new Runnable() {
+                @Override
+                public void run() {
+                    balancingPolicy.drainToCount(0, false);
+                    try {
+                        Thread.sleep(waitTime);
+                    } catch (InterruptedException e) {
+                        LOG.warn("Interrupted while waiting.");
+                    }
+                    LOG.info("Back to work.");
+                    stopFlag.set(false);
+                    waitInProgress.set(false);
+                }
+            });
         }
     }
 
@@ -516,7 +545,7 @@ public class Cluster
         workUnitsPeggedToMe.clear();
         state.set(NodeState.Fresh);
     }
-    
+
     /**
      * Schedules auto-rebalancing if auto-rebalancing is enabled. The task is
      * scheduled to run every 60 seconds by default, or according to the config.
@@ -593,22 +622,22 @@ public class Cluster
                     new ZKDeserializers.NodeInfoDeserializer(), nodesChangedListener);
             allWorkUnits = ZooKeeperMap.create(zk, String.format("/%s", config.workUnitName),
                     new ZKDeserializers.ObjectNodeDeserializer(), new VerifyIntegrityListener<ObjectNode>(this));
-    
+
             workUnitMap = ZooKeeperMap.create(zk, String.format("/%s/claimed-%s", name, config.workUnitShortName),
                     stringDeser, verifyIntegrityListener);
-    
+
             // Watch handoff requests and results.
             if (config.useSoftHandoff) {
                 handoffRequests = ZooKeeperMap.create(zk, String.format("/%s/handoff-requests", name),
                         stringDeser, verifyIntegrityListener);
-    
+
                 handoffResults = ZooKeeperMap.create(zk, String.format("/%s/handoff-result", name),
                         stringDeser, handoffResultsListener);
             } else {
                 handoffRequests = new HashMap<String, String>();
                 handoffResults = new HashMap<String, String>();
             }
-    
+
             // If smart balancing is enabled, watch for changes to the cluster's workload.
             if (config.useSmartBalancing) {
                 loadMap = ZooKeeperMap.<Double>create(zk, String.format("/%s/meta/workload", name),
@@ -626,15 +655,18 @@ public class Cluster
      * on node and cluster load. If simple balancing is in effect, claim by count.
      */
     public void claimWork() throws InterruptedException {
-        if (state.get() == NodeState.Started && connected.get()) {
+        if (state.get() == NodeState.Started && !waitInProgress.get() && connected.get()) {
             balancingPolicy.claimWork();
         }
     }
 
     public void requestClaim() {
+        if (waitInProgress.get()) {
+            return;
+        }
         claimer.requestClaim();
     }
-    
+
     /**
       * Requests that another node take over for a work unit by creating a ZNode
       * at handoff-requests. This will trigger a claim cycle and adoption.
@@ -652,7 +684,7 @@ public class Cluster
     {
         LinkedHashSet<String> noLongerActive = new LinkedHashSet<String>(myWorkUnits);
         noLongerActive.removeAll(allWorkUnits.keySet());
-        
+
         for (String workUnit : noLongerActive) {
             shutdownWork(workUnit, true);
         }
@@ -686,6 +718,8 @@ public class Cluster
      * TODO: Refactor to remove check and cast.
      */
     public void startWork(String workUnit) throws InterruptedException {
+        if (waitInProgress.get())
+            LOG.warn("Claiming work during wait!");
         LOG.info("Successfully claimed {}: {}. Starting...", config.workUnitName, workUnit);
         final boolean added = myWorkUnits.add(workUnit);
 
@@ -727,7 +761,7 @@ public class Cluster
      */
     @Override
     public void rebalance() throws InterruptedException {
-        if (state.get() != NodeState.Fresh) {
+        if (state.get() != NodeState.Fresh && !waitInProgress.get()) {
             balancingPolicy.rebalance();
         }
     }
